@@ -1,5 +1,5 @@
 #![allow(unused)]
-use floem::{event::{Event, EventListener}, keyboard::{Key, NamedKey}, kurbo::Size, style::AlignSelf, style_class, taffy::{AlignItems, Position}, IntoView, View};
+use floem::{event::{Event, EventListener}, keyboard::{Key, NamedKey}, kurbo::Size, reactive::create_effect, style::AlignSelf, style_class, taffy::{AlignItems, Position}, views::{VirtualDirection, VirtualItemSize, VirtualVector}, IntoView, View};
 use floem::views::{button, stack_from_iter};
 use floem::taffy::{style_helpers::{minmax, TaffyGridLine}, AlignContent, FlexDirection, FlexWrap, GridPlacement, GridTrackRepetition, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
 use floem::window::{WindowConfig, WindowId};
@@ -7,7 +7,9 @@ use floem::views::{container, dyn_container, h_stack, label, scroll, stack, text
 use floem::style::{Background, Style, Transition};
 use floem::reactive::{create_rw_signal, create_signal, provide_context, use_context, RwSignal};
 use floem::peniko::Color;
+use im::Vector;
 
+pub mod element;
 
 pub const SIDEBAR_WIDTH: f64 = 150.0;
 pub const TOPBAR_HEIGHT: f64 = 35.0;
@@ -58,7 +60,8 @@ enum Sig {
     Main,
     Flex,
     Grid,
-    Gridv2
+    Gridv2,
+    Simple
 }
 
 
@@ -72,9 +75,10 @@ pub fn new_app_window(id: WindowId) -> impl IntoView {
             Sig::Main => main_example().into_any(),
             Sig::Flex => flex_example().into_any(),
             Sig::Grid => grid_example().into_any(),
-            Sig::Gridv2 => grid_examplev2().into_any()
+            Sig::Gridv2 => grid_examplev2().into_any(),
+            Sig::Simple => simple().into_any()
         }
-    ).style(|s|s.max_height(800).max_width(900));
+    ).style(|s|s.size_full());
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
@@ -102,7 +106,11 @@ fn main_example() -> impl IntoView {
         button(||"Gridv2").on_click_stop(move |_| {
             // let sig = use_context::<Sig>().unwrap();
             sig.set(Sig::Gridv2)
-        })
+        }),
+        button(||"Simple").on_click_stop(move |_| {
+            // let sig = use_context::<Sig>().unwrap();
+            sig.set(Sig::Simple)
+        }),
     )).style(|s|s.width_full().height_full().align_content(AlignContent::Center))
 }
 
@@ -162,6 +170,159 @@ pub fn flex_example() -> impl IntoView {
         )
     )).style(|s|s.width_full().height_full())
 }
+
+
+fn simple() -> impl IntoView {
+    let room_view = Vector::from(vec!["asdsdasda".to_string(), "tertrte".to_string(), "werweewg".to_string(), "ertrtrtret".to_string(), "rtwertertwe".to_string(), "werwerwerwer".to_string(), "etwerrtwerwer".to_string(), "tyutyutyth".to_string(), "yujkhngcvb".to_string(), "gZsdczsxcasc".to_string()]);
+    let room_view = create_rw_signal(room_view);
+
+    let mut selected_room = create_rw_signal(String::new());
+    
+    let room_msgs = Vector::from(vec![
+        "asdsdsdasda\nMsg_autor".to_string(), "tertrte\nMsg_autor".to_string(), "werweewg\nMsg_autor".to_string(), "ertrtrtret\nMsg_autor".to_string(), "rtwertertwe\nMsg_autor".to_string(), "werwerwerwer\nMsg_autor".to_string(), "etwerrtwerwer\nMsg_autor".to_string(), "tyutyutyth\nMsg_autor".to_string(), "yujkhngcvb\nMsg_autor".to_string(), "gZsdczsxcasc\nMsg_autor".to_string(),
+        "teqawdrtrte\nMsg_autor".to_string(), "werhtyweewg\nMsg_autor".to_string(), "ertrtrarret\nMsg_autor".to_string(), "rtwertesdrtwe\nMsg_autor".to_string(), "werwerweryjwer\nMsg_autor".to_string(), "etwerrwerwefttwerwer\nMsg_autor".to_string(), "tyutyuyutyth\nMsg_autor".to_string(), "yujkhngcyuvb\nMsg_autor".to_string(), "gZsdczaefsxcasc\nMsg_autor".to_string()
+    ]);
+    let room_msgs = create_rw_signal(room_msgs);
+    
+    create_effect(move |_| {
+        let active = selected_room.get();
+        if active == "asdsdasda" {
+            // room_msgs.
+        }
+    });
+    
+    v_stack((
+        h_stack((
+            button(||"go back").on_click_stop(move |_| {
+                let sig = use_context::<RwSignal<Sig>>().unwrap();
+                sig.set(Sig::Main)
+            }),
+            button(||"Menu").on_click_stop(move |_| {
+                let sig = use_context::<RwSignal<Sig>>().unwrap();
+                sig.set(Sig::Main)
+            }),
+            button(||"Preferences").on_click_stop(move |_| {
+                let sig = use_context::<RwSignal<Sig>>().unwrap();
+                sig.set(Sig::Main)
+            }),
+            button(||"About").on_click_stop(move |_| {
+                let sig = use_context::<RwSignal<Sig>>().unwrap();
+                sig.set(Sig::Main)
+            }),
+        )).style(|s|s
+            .width_full()
+            .height(40.0)
+            .align_items(AlignItems::Center)
+            .justify_content(AlignContent::Start)
+            .margin(3)
+            .gap(5, 0)
+        ),
+        h_stack((
+            scroll((
+                virtual_list(
+                    VirtualDirection::Vertical,
+                    VirtualItemSize::Fixed(Box::new(|| 120.0)),
+                    move || room_view.get(),
+                    move |x| x.clone(),
+                    move |x| {
+                        let x = x.clone();
+                        let y = x.clone();
+                        button(move || x.clone()).style(|s|s
+                            .border(1)
+                            .border_color(Color::BLACK)
+                            .border_radius(5)
+                            .size(238, 110)
+                            .margin_bottom(5)
+                        ).on_click_stop(move |_| {
+                            selected_room.set(y.clone())
+                        })
+                    }
+                )
+            )).style(|s|s
+                .font_bold()
+                .font_size(15.0)
+                .border(1)
+                .border_color(Color::BLACK)
+                .border_radius(5)
+                .padding(5)
+            ).style(|s|s.width(250).height_full()),
+            stack((
+                label(||"Text field").style(|s|s
+                    .font_bold()
+                    .font_size(20.0)
+                    .border_radius(5)
+                    .padding(15)
+                    .border(1)
+                    .border_color(Color::BLACK)
+                    .height_pct(15.0)
+                    .width_full()
+                ),
+                scroll((
+                    virtual_list(
+                        VirtualDirection::Vertical,
+                        VirtualItemSize::Fixed(Box::new(|| 120.0)),
+                        move || room_msgs.get().enumerate(),
+                        move |msg| msg.clone(),
+                        |(index, msg)| {
+                            if index % 2 == 0 {
+                                label(move ||msg.clone()).style(|s|s
+                                    .width(638)
+                                    .height(55)
+                                    .border(1)
+                                    .border_color(Color::BLACK)
+                                    .border_radius(5)
+                                    .padding(5)
+                                    .align_items(AlignItems::Center)
+                                    .justify_start()
+                                    // .align_self(AlignItems::FlexStart)
+                                    // .justify_self(AlignItems::FlexStart)
+                                )
+                            } else {
+                                label(move ||msg.clone()).style(|s|s
+                                    .width(638)
+                                    .height(55)
+                                    .border(1)
+                                    .border_color(Color::BLACK)
+                                    .border_radius(5)
+                                    .padding(5)
+                                    .align_items(AlignItems::Center)
+                                    .justify_end()
+                                    // .align_self(AlignItems::FlexEnd)
+                                    // .justify_self(AlignItems::FlexEnd)
+                                )
+
+                            }
+                        }
+                    ).style(|s|s
+                        // .size_full()
+                        // .items_end()
+                        // .width(670)
+                        .height_full()
+                        .width_full()
+                        .font_size(12.0)
+                        .padding(5)
+                        .border(1)
+                        .border_color(Color::BLACK)
+                        // .gap(5, 5)
+                    )
+                )).style(|s|s
+                    .border_radius(5)
+                    .height_pct(85.0)
+                    .width_full()
+                    // .grid_column(Line {
+                    //     start: GridPlacement::from_line_index(3),
+                    //     end: GridPlacement::Span(4)
+                    // })
+                    // .grid_row(Line {
+                    //     start: GridPlacement::from_line_index(1),
+                    //     end: GridPlacement::Span(4)
+                    // })
+                )
+            )).style(|s|s.size_full().flex_direction(FlexDirection::ColumnReverse))
+        )).style(|s|s.size_full())
+    )).style(|s|s.size_full())
+}
+
 
 
 pub fn grid_example() -> impl IntoView {
