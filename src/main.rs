@@ -1,5 +1,5 @@
 #![allow(unused)]
-use floem::{event::{Event, EventListener}, keyboard::{Key, NamedKey}, kurbo::Size, reactive::create_effect, style::AlignSelf, style_class, taffy::{AlignItems, Position}, views::{VirtualDirection, VirtualItemSize, VirtualVector}, IntoView, View};
+use floem::{event::{Event, EventListener}, keyboard::{Key, NamedKey}, kurbo::Size, reactive::create_effect, style::AlignSelf, style_class, taffy::{AlignItems, JustifyContent, Position}, views::{dyn_view, VirtualDirection, VirtualItemSize, VirtualVector}, IntoView, View};
 use floem::views::{button, stack_from_iter};
 use floem::taffy::{style_helpers::{minmax, TaffyGridLine}, AlignContent, FlexDirection, FlexWrap, GridPlacement, GridTrackRepetition, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
 use floem::window::{WindowConfig, WindowId};
@@ -69,16 +69,13 @@ pub fn new_app_window(id: WindowId) -> impl IntoView {
     let sig = create_rw_signal(Sig::Main);
     provide_context(sig);
 
-    let view = dyn_container(
-        move || sig.get(),
-        move |s| match s {
-            Sig::Main => main_example().into_any(),
-            Sig::Flex => flex_example().into_any(),
-            Sig::Grid => grid_example().into_any(),
-            Sig::Gridv2 => grid_examplev2().into_any(),
-            Sig::Simple => simple().into_any()
-        }
-    ).style(|s|s.size_full());
+    let view = dyn_view(move || match sig.get() {
+        Sig::Main => main_example().into_any(),
+        Sig::Flex => flex_example().into_any(),
+        Sig::Grid => grid_example().into_any(),
+        Sig::Gridv2 => grid_examplev2().into_any(),
+        Sig::Simple => simple().into_any()
+    }).style(|s|s.size_full());
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
@@ -96,19 +93,15 @@ fn main_example() -> impl IntoView {
 
     v_stack((
         button(||"Flex").on_click_stop(move |_| {
-            // let sig = use_context::<Sig>().unwrap();
             sig.set(Sig::Flex)
         }),
         button(||"Grid").on_click_stop(move |_| {
-            // let sig = use_context::<Sig>().unwrap();
             sig.set(Sig::Grid)
         }),
         button(||"Gridv2").on_click_stop(move |_| {
-            // let sig = use_context::<Sig>().unwrap();
             sig.set(Sig::Gridv2)
         }),
         button(||"Simple").on_click_stop(move |_| {
-            // let sig = use_context::<Sig>().unwrap();
             sig.set(Sig::Simple)
         }),
     )).style(|s|s.width_full().height_full().align_content(AlignContent::Center))
@@ -179,8 +172,8 @@ fn simple() -> impl IntoView {
     let mut selected_room = create_rw_signal(String::new());
     
     let room_msgs = Vector::from(vec![
-        "asdsdsdasda\nMsg_autor".to_string(), "tertrte\nMsg_autor".to_string(), "werweewg\nMsg_autor".to_string(), "ertrtrtret\nMsg_autor".to_string(), "rtwertertwe\nMsg_autor".to_string(), "werwerwerwer\nMsg_autor".to_string(), "etwerrtwerwer\nMsg_autor".to_string(), "tyutyutyth\nMsg_autor".to_string(), "yujkhngcvb\nMsg_autor".to_string(), "gZsdczsxcasc\nMsg_autor".to_string(),
-        "teqawdrtrte\nMsg_autor".to_string(), "werhtyweewg\nMsg_autor".to_string(), "ertrtrarret\nMsg_autor".to_string(), "rtwertesdrtwe\nMsg_autor".to_string(), "werwerweryjwer\nMsg_autor".to_string(), "etwerrwerwefttwerwer\nMsg_autor".to_string(), "tyutyuyutyth\nMsg_autor".to_string(), "yujkhngcyuvb\nMsg_autor".to_string(), "gZsdczaefsxcasc\nMsg_autor".to_string()
+        "asdsdsdasda Msg_autor".to_string(), "tertrte Msg_autor".to_string(), "werweewg Msg_autor".to_string(), "ertrtrtret Msg_autor".to_string(), "rtwertertwe Msg_autor".to_string(), "werwerwerwer Msg_autor".to_string(), "etwerrtwerwer Msg_autor".to_string(), "tyutyutyth Msg_autor".to_string(), "yujkhngcvb Msg_autor".to_string(), "gZsdczsxcasc Msg_autor".to_string(),
+        "teqawdrtrte Msg_autor".to_string(), "werhtyweewg Msg_autor".to_string(), "ertrtrarret Msg_autor".to_string(), "rtwertesdrtwe Msg_autor".to_string(), "werwerweryjwer Msg_autor".to_string(), "etwerrwerwefttwerwer Msg_autor".to_string(), "tyutyuyutyth Msg_autor".to_string(), "yujkhngcyuvb Msg_autor".to_string(), "gZsdczaefsxcasc Msg_autor".to_string()
     ]);
     let room_msgs = create_rw_signal(room_msgs);
     
@@ -218,7 +211,7 @@ fn simple() -> impl IntoView {
             .gap(5, 0)
         ),
         h_stack((
-            scroll((
+            scroll(
                 virtual_list(
                     VirtualDirection::Vertical,
                     VirtualItemSize::Fixed(Box::new(|| 120.0)),
@@ -238,14 +231,15 @@ fn simple() -> impl IntoView {
                         })
                     }
                 )
-            )).style(|s|s
-                .font_bold()
+            ).style(|s|s
+                .height_full()
+                .width(250)
                 .font_size(15.0)
                 .border(1)
                 .border_color(Color::BLACK)
                 .border_radius(5)
                 .padding(5)
-            ).style(|s|s.width(250).height_full()),
+            ),
             stack((
                 label(||"Text field").style(|s|s
                     .font_bold()
@@ -257,68 +251,60 @@ fn simple() -> impl IntoView {
                     .height_pct(15.0)
                     .width_full()
                 ),
-                scroll((
+                scroll(
                     virtual_list(
                         VirtualDirection::Vertical,
-                        VirtualItemSize::Fixed(Box::new(|| 120.0)),
+                        VirtualItemSize::Fixed(Box::new(|| 65.0)),
                         move || room_msgs.get().enumerate(),
                         move |msg| msg.clone(),
                         |(index, msg)| {
                             if index % 2 == 0 {
-                                label(move ||msg.clone()).style(|s|s
-                                    .width(638)
-                                    .height(55)
+                                stack((
+                                    label(move || msg.clone()),
+                                    label( ||"another label"),
+                                    label( ||"anotation")
+                                )).style(|s|s
+                                    .flex_col()
+                                    .align_self(AlignItems::End)
+                                    .align_items(AlignItems::End)
+                                    // .justify_content(JustifyContent::FlexStart)
                                     .border(1)
                                     .border_color(Color::BLACK)
                                     .border_radius(5)
                                     .padding(5)
-                                    .align_items(AlignItems::Center)
-                                    .justify_start()
-                                    // .align_self(AlignItems::FlexStart)
-                                    // .justify_self(AlignItems::FlexStart)
                                 )
                             } else {
-                                label(move ||msg.clone()).style(|s|s
-                                    .width(638)
-                                    .height(55)
+                                // let (x,y) = msg.split_once(' ').unwrap();
+                                stack((
+                                    label(move || msg.clone()),
+                                    label( || "label to view")
+                                )).style(|s|s
+                                    .flex_col()
+                                    .align_self(AlignItems::Start)
+                                    .align_items(AlignItems::Start)
                                     .border(1)
                                     .border_color(Color::BLACK)
                                     .border_radius(5)
                                     .padding(5)
-                                    .align_items(AlignItems::Center)
-                                    .justify_end()
-                                    // .align_self(AlignItems::FlexEnd)
-                                    // .justify_self(AlignItems::FlexEnd)
                                 )
-
                             }
                         }
-                    ).style(|s|s
-                        // .size_full()
-                        // .items_end()
-                        // .width(670)
-                        .height_full()
-                        .width_full()
-                        .font_size(12.0)
+                    ).style(|s|s // virtual list
+                        .flex()
+                        .flex_direction(FlexDirection::Column)
+                        .min_width_full()
                         .padding(5)
-                        .border(1)
-                        .border_color(Color::BLACK)
-                        // .gap(5, 5)
                     )
-                )).style(|s|s
+                ).style(|s|s // scroll
                     .border_radius(5)
                     .height_pct(85.0)
                     .width_full()
-                    // .grid_column(Line {
-                    //     start: GridPlacement::from_line_index(3),
-                    //     end: GridPlacement::Span(4)
-                    // })
-                    // .grid_row(Line {
-                    //     start: GridPlacement::from_line_index(1),
-                    //     end: GridPlacement::Span(4)
-                    // })
                 )
-            )).style(|s|s.size_full().flex_direction(FlexDirection::ColumnReverse))
+            )).style(|s| s // stack
+                .flex_direction(FlexDirection::ColumnReverse)
+                .width_full()
+                .height_full()
+            )
         )).style(|s|s.size_full())
     )).style(|s|s.size_full())
 }
