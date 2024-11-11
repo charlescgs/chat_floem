@@ -1,0 +1,13 @@
+{
+  "theme": "Dark",
+  "language": "English",
+  "position": {
+    "x": 735.3333333333334,
+    "y": 502.0
+  },
+  "size": {
+    "width": 700.0,
+    "height": 520.0
+  },
+  "scale": 1.0
+}
