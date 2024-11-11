@@ -1,17 +1,15 @@
 #![allow(unused)]
-use std::borrow::BorrowMut;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::rc::Rc;
 
-use chrono_lite::Datetime;
 use config::launch_with_config;
 use cont::acc::Account;
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
-use floem::reactive::{create_effect, create_memo, provide_context, use_context, SignalRead, Trigger};
-use tracing_lite::{debug, trace, warn};
+use floem::reactive::{create_effect, provide_context, use_context, Trigger};
+use tracing_lite::{debug, trace};
 use ulid::Ulid;
 use util::Id;
 use views::msg::MsgCtx;
@@ -140,28 +138,8 @@ fn toolbar_view() -> impl IntoView {
                         .is_none() {
                             trace!("Inserted MsgCtx to state.rooms {}", active.0)
                         }
-                        // warn!("msgs len: {}", m.len());
-                        // if msgs.try_read_untracked().is_some() {
-                            //     let mut cx = BTreeMap::new();
-                            //     cx.insert(msg.msg.msg_id.id, msg.clone());
-                            //     msgs.set(cx);
-                            //     trace!("Inserted first MsgCtx to state.rooms {}", active.0);
-                            // } else {
-                                // warn!("msgs len:");
-                                // msgs.update(|m| {
-                                    //     msgs.insert(msg.msg.msg_id.id, msg.clone());
-                                    //     warn!("msgs len: {}", m.len());
-                                    // });
-                                    // }
                     });
-                    msgs_tracker.notify();
-                    // state.data
-                    //     .get(&active.id)
-                    //     .unwrap()
-                    //     .update(|m| {
-                    //         m.insert(msg.msg.msg_id.clone(), msg);
-                    //         trace!("Inserted MsgCtx to state.data {}", active.id);
-                    //     });
+                    msgs_tracker.notify()
                 }
             },
         }
@@ -265,16 +243,7 @@ fn msg_and_editor_view() -> impl IntoView {
 fn msgs_view() -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
     let msgs_trigger = use_context::<Trigger>().unwrap();
-    // let state2 = state.clone();
-    // create_effect(move |_| {
-    //     trace!("Running effect for msgs view");
-    //     if let Some(room) = state.active.get() {
-    //         // if let Some(msgs) = 
-    //         room.msgs.get()
-    //         //     println!("{msgs:#?}")
-    //         // }
-    //     }
-    // });
+
     let room_msgs = move || {
         trace!("->> derived_signal: msgs_view");
         msgs_trigger.track();
@@ -296,15 +265,7 @@ fn msgs_view() -> impl IntoView {
             RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
         }
     };
-    // let room_msgs = create_memo(move |_| {
-      
-    // });
 
-    // if let Some(r) = active_room() {
-    //     debug!("msgs_view: active_room.get():\n{:#?}", r.msgs.get());
-    // }
-    // // if let Some(room) = active_room {
-        // trace!("msgs view is some of room");
     dyn_stack(
         move || {
             // msgs_trigger.track();
@@ -333,22 +294,6 @@ fn msgs_view() -> impl IntoView {
         .border_radius(4.)
         .padding(5.)
     )
-        // } else {
-        //     trace!("msgs view is None of room");
-            // empty()
-            // .scroll()
-            // .style(|s| s
-            //     .width_pct(95.)
-            //     // .max_width_full()
-            //     .min_height_pct(80.)
-            //     .max_height_pct(80.)
-            //     // .background(Color::OLIVE_DRAB)
-            //     .border(1.)
-            //     .border_color(Color::OLIVE)
-            //     .border_radius(4.)
-            //     .padding(5.)
-            // )
-        // }
 }
 
 // MARK: editor
