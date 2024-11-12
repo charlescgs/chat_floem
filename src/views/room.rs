@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Display, rc::Rc};
+use std::{collections::{BTreeMap, HashMap, HashSet}, fmt::Display, rc::Rc};
 
 use floem::{prelude::*, reactive::{create_effect, create_memo, use_context, Trigger}, text::Style, AnyView, IntoView};
 use tracing_lite::trace;
@@ -35,6 +35,7 @@ pub struct RoomCtx {
     pub id: Id,
     pub label: RwSignal<RoomLabel>,
     pub owner: Account,
+    pub members: HashMap<Ulid, Account>,
     // pub msgs: RwSignal<BTreeMap<Ulid, MsgCtx>>,
     // pub last: RwSignal<Option<MsgCtx>>,
     pub unread: RwSignal<bool>,
@@ -43,13 +44,12 @@ pub struct RoomCtx {
 }
 
 impl RoomCtx {
-    pub fn new_from_click() -> Self {
+    pub fn new_from_click(st: Rc<ChatState>) -> Self {
         let room_id = Id::new(Tb::Room);
-        let author = Account {
-            acc_id: Id::new(Tb::Acc),
-            username: "Karol".to_string(),
-            av: '\u{1F60A}'.to_string(),
-            rooms: vec![room_id.clone()],
+        let acc = if let Some(acc) = Account::new_from_click() {
+            acc
+        } else {
+            st.accounts.with_untracked(|accs| accs.values().next().unwrap().clone())
         };
         // let msg = MsgCtx::new_from_click(&room_id, &author);
         // let msg2 = MsgCtx::new_from_click(&room_id, &author);
@@ -67,7 +67,8 @@ impl RoomCtx {
             unread: RwSignal::new(false),
             // last: RwSignal::new(msg.clone()),
             description: RwSignal::new(None),
-            owner: author,
+            owner: acc,
+            members: HashMap::new()
         }
     }
 }
@@ -87,14 +88,14 @@ impl IntoView for RoomCtx {
                 } else { ("---".into(), "---".into()) }
             } else { ("--".into(), "--".into()) }
         });
-        let av = label(move || avatar.clone())
+        let av = img(move || avatar.clone())
             .style(|s| s
                 .justify_center()
                 .items_center()
                 .size_full()
                 .max_size_full()
-                .border(1.)
-                .border_color(Color::NAVY)
+                // .border(1.)
+                // .border_color(Color::NAVY)
                 .border_radius(5.)
             );
         let room_name = label(move || { name.clone()
@@ -132,19 +133,13 @@ impl IntoView for RoomCtx {
             trace!("effect: 'select room'");
             let need_upt = state2.active.with_untracked(|act| {
                 match act {
-                    Some((id, _)) => {
-                        if id == &self.id {
-                            false
-                        } else {
-                            true
-                        }
-                    },
-                    None => true
+                    Some(id) if id == &self.id => false,
+                    _ => true
                 }
             });
             if need_upt {
                 trace!("into_view for RoomCtx: need_upt is `true`");
-                state2.active.set(Some((room.id.clone(), room.owner.clone())));
+                state2.active.set(Some(room.id.clone()));
                 msgs_tracker.notify();
             }
         });

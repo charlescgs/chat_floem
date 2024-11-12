@@ -38,10 +38,12 @@ pub const BUTTON_ACTIVE: Color = Color::rgb8(250, 0, 0);
 
 #[derive(Debug)]
 pub struct ChatState {
+    /// List of all users.
+    pub accounts: RwSignal<HashMap<Ulid, Account>>,
     /// List of all user rooms.
     pub rooms: RwSignal<BTreeMap<Ulid, RoomCtx>>,
     /// An active room (if any).
-    pub active: RwSignal<Option<(Id, Account)>>,
+    pub active: RwSignal<Option<Id>>,
     /// Map with:
     /// K: [Id] of a room
     /// V: Ordered map of [MsgCtx] with its Id.
@@ -51,9 +53,10 @@ pub struct ChatState {
 impl ChatState {
     pub fn new() -> Self {
         Self {
+            accounts: RwSignal::new(HashMap::new()),
             rooms: RwSignal::new(BTreeMap::new()),
             active: RwSignal::new(None),
-            data: RwSignal::new(HashMap::new())
+            data: RwSignal::new(HashMap::new()),
         }
     }
 }
@@ -88,7 +91,7 @@ pub enum NewList {
     None,
     Room,
     Msg,
-    // Account
+    Account
 }
 
 impl Display for EditList {
@@ -118,30 +121,52 @@ fn toolbar_view() -> impl IntoView {
             NewList::Room => {
                 trace!("Clicked NewList::Room");
                 let state = use_context::<Rc<ChatState>>().unwrap();
-                let room = RoomCtx::new_from_click();
-                state.rooms.update(|s| {s.insert(room.id.id.clone(), room.clone());} );
-                state.data.update(|d| { d.insert(room.id.id.clone(), RefCell::new(BTreeMap::new())); });
+
+                let room = RoomCtx::new_from_click(state.clone());
+                state.accounts.update(|accs| { accs.insert(room.owner.acc_id.id.clone(), room.owner.clone());} );
+                state.rooms.update(|rooms| { rooms.insert(room.id.id.clone(), room.clone());} );
+                state.data.update(|data| { data.insert(room.id.id.clone(), RefCell::new(BTreeMap::new())); });
                 trace!("Created and inserted test RoomCtx")
+                
             },
             NewList::Msg => {
                 trace!("Clicked NewList::Msg");
                 let state = use_context::<Rc<ChatState>>().unwrap();
+                // -- Get active room
                 if let Some(active) = state.active.get_untracked() {
-                    let msg = MsgCtx::new_from_click(&active.0, &active.1);
+                    // -- Get some account from that room
+                    let acc = state.rooms.with_untracked(|r| {
+                        let room = r.get(&active.id).unwrap();
+                        if room.members.is_empty() {
+                            room.owner.clone()
+                        } else {
+                            room.members.values().next().unwrap().clone()
+                        }
+                    });
+                    // -- Create Msg
+                    let msg = MsgCtx::new_from_click(&active, &acc);
                     trace!("Created New MsgCtx");
+                    // -- Save it
                     state.data.update(|rooms| {
                         if rooms
-                        .get_mut(&active.0.id)
+                        .get_mut(&active.id)
                         .unwrap()
                         .get_mut()
                         .insert(msg.msg.msg_id.id, msg.clone())
                         .is_none() {
-                            trace!("Inserted MsgCtx to state.rooms {}", active.0)
+                            trace!("Inserted MsgCtx to state.rooms {}", active)
                         }
                     });
                     msgs_tracker.notify()
                 }
             },
+            NewList::Account => {
+                trace!("Clicked NewList::Account");
+                let state = use_context::<Rc<ChatState>>().unwrap();
+                if let Some(acc) = Account::new_from_click() {
+
+                }
+            }
         }
     });
 
@@ -153,6 +178,9 @@ fn toolbar_view() -> impl IntoView {
     
     let new_menu = "New".button().popout_menu(move || {
         Menu::new("")
+            .entry(MenuItem::new("Account").action(move || {
+                new_list_signal.set(NewList::Account);
+            }))
             .entry(MenuItem::new("Room").action(move || {
                 new_list_signal.set(NewList::Room);
             }))
@@ -202,7 +230,7 @@ fn rooms_view() -> impl IntoView {
                 // state3.active.track();
                 state3.active
                     .get()
-                    .is_some_and(|a|a.0.id == r_id.id),
+                    .is_some_and(|a|a.id == r_id.id),
                     |s| s.background(Color::GRAY)
             )
         )
@@ -251,7 +279,7 @@ fn msgs_view() -> impl IntoView {
             trace!("1");
             state.data.with_untracked(|rooms| {
                 trace!("2");
-                if let Some(msgs) = rooms.get(&room.0.id) {
+                if let Some(msgs) = rooms.get(&room.id) {
                     trace!("3");
                     // debug!("{:#?}", room_cx);
                     msgs.clone()
