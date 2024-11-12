@@ -295,6 +295,8 @@ fn msg_and_editor_view() -> impl IntoView {
         .debug_name("msgs and editor")
         .style(|s| s
             .size_full()
+            // .align_content(AlignContent::Stretch)
+            // .flex_basis(-2)
             // .min_size_full()
             .max_size_full()
             // .flex_basis(0)
@@ -334,7 +336,7 @@ fn msgs_view() -> impl IntoView {
         move || {
             // msgs_trigger.track();
             let msgs = room_msgs();
-            msgs.into_inner().into_iter().rev()
+            msgs.into_inner().into_iter()
         },
         |(id, _msg)| id.clone(),
         |(_id, msg)| {
@@ -350,13 +352,13 @@ fn msgs_view() -> impl IntoView {
     .style(|s| s
         .flex_col()
         // .flex_shrink(0.)
-        .flex_direction(FlexDirection::ColumnReverse)
+        .flex_direction(FlexDirection::Column)
         // .min_size(0, 0)
         // .min_width(200.)
         // .height_full()
         // .min_height_full()
         // .max_height_full()
-        // .padding(2.)
+        .padding(2.)
         .gap(2.)
         // .border(1.)
         // .border_radius(5.)
@@ -366,35 +368,36 @@ fn msgs_view() -> impl IntoView {
         .size_full()
         .min_size_full()
         .max_size_full()
-        .padding(2.)
-        .column_gap(5.)
+        // .padding(2.)
+        // .column_gap(5.)
     )
-    // .container()
-        // .style(|s| s
+    .container()
+        .style(|s| s
             // .height_pct(80.)
-            // .size_full()
+            .width_full()
+            // .max_height_full()
             // .min_size_full()
             // .max_size_full()
             // .max_size_full()
-        // .align_content(AlignContent::FlexStart)
+        .align_self(AlignItems::End)
         // .size_full()
         // .min_size_full()
         // .max_size_full()
 
-    // )
+    )
     .scroll()
-    // .scroll_style(|s| s.overflow_clip(true))
+    .scroll_style(|s| s.overflow_clip(true))
     // .style(|s| s.align_content(AlignContent::FlexEnd))
     .style(|s| s
         // .width_pct(95.)
-        .width_full()
-        .max_width_full()
+        // .width_full()
+        // .max_width_full()
     // // //     .align_content(AlignContent::FlexStart)
         // .height_pct(80.)
         // .min_height_pct(80.)
         // .max_height_pct(80.)
-        // .size_full()
-        // .max_size_full()
+        .size_full()
+        .max_size_full()
         .border(1.)
         .border_color(Color::OLIVE)
         .border_radius(5.)
@@ -406,6 +409,8 @@ fn msgs_view() -> impl IntoView {
         .height_pct(80.)
         .min_height_pct(80.)
         .max_height_pct(80.)
+        .align_self(AlignItems::Stretch)
+        .align_content(AlignContent::End)
     )
 }
 

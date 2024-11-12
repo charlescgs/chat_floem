@@ -85,7 +85,7 @@ impl IntoView for MsgCtx {
                 .min_height(70.)
                 // .max_height(70.)
                 // .min_width_full()
-                // .max_width_full()
+                // .max_width_full()c
                 .padding(5.)
                 // .apply_if(self.room_owner, |s| s.align_self(AlignItems::End))
             ).into_any()
