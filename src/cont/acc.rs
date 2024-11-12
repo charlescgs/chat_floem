@@ -1,7 +1,6 @@
 use std::{rc::Rc, sync::atomic::{AtomicU8, Ordering}};
 
 use chrono_lite::Datetime;
-use floem::views::Img;
 use serde::{Deserialize, Serialize};
 
 use crate::util::{Id, Tb};

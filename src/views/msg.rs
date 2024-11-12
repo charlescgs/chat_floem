@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 
 use chrono_lite::Datetime;
-use floem::taffy::{AlignContent, AlignItems};
+use floem::taffy::AlignItems;
 use floem::{prelude::*, AnyView};
 
 use crate::cont::acc::Account;
@@ -19,6 +19,7 @@ pub struct MsgCtx {
     pub id: Id,
     pub author: Rc<Account>,
     pub room: Id,
+    pub room_owner: bool,
     pub com: RwSignal<Option<Vec<ComCtx>>>,
     pub rea: RwSignal<Option<Vec<ReaCtx>>>,
     pub msg: Rc<Msg>
@@ -55,6 +56,7 @@ impl MsgCtx {
             com: RwSignal::new(None),
             rea: RwSignal::new(None),
             msg: Rc::new(m),
+            room_owner: true
         }
     }
 }
@@ -66,17 +68,26 @@ impl IntoView for MsgCtx {
         let text = self.msg.text.current.clone();
         let time = self.msg.created.clone();
         let author = self.author.username.clone();
-        (author, text, time.to_raw_compact())
+        (
+            author.style(|s| s.color(Color::GRAY)),
+            text,
+            time.to_raw_compact().style(|s| s.color(Color::GRAY))
+        )
             .v_stack()
-            .style(|s| s
-                .flex_col()
-                .align_self(AlignItems::FlexEnd)
+            .debug_name("msg")
+            .style(move |s| s
+                // .align_self(AlignItems::FlexEnd)
+                .justify_between()
                 .border(1.)
                 .border_color(Color::BLACK)
                 .border_radius(4.)
                 .height(70.)
-                .max_width_full()
+                .min_height(70.)
+                // .max_height(70.)
+                // .min_width_full()
+                // .max_width_full()
                 .padding(5.)
+                // .apply_if(self.room_owner, |s| s.align_self(AlignItems::End))
             ).into_any()
     }
 }

@@ -1,10 +1,10 @@
-use std::{collections::{BTreeMap, HashMap, HashSet}, fmt::Display, rc::Rc};
+use std::{collections::HashMap, fmt::Display, rc::Rc};
 
-use floem::{dyn_view, prelude::*, reactive::{create_effect, create_memo, use_context, Trigger}, text::Style, AnyView, IntoView};
+use floem::{prelude::*, reactive::{create_effect, use_context, Trigger}, AnyView, IntoView};
 use tracing_lite::trace;
 use ulid::Ulid;
 
-use crate::{cont::{acc::Account, msg}, util::{Id, Tb}, ChatState};
+use crate::{cont::acc::Account, util::{Id, Tb}, ChatState};
 use super::msg::MsgCtx;
 
 
@@ -45,7 +45,7 @@ pub struct RoomCtx {
 
 impl RoomCtx {
     pub fn new_from_click(st: Rc<ChatState>) -> Self {
-        let room_id = Id::new(Tb::Room);
+        // let room_id = Id::new(Tb::Room);
         let acc = if let Some(acc) = Account::new_from_click() {
             acc
         } else {
@@ -56,7 +56,6 @@ impl RoomCtx {
             label: RwSignal::new(RoomLabel::None),
             num_unread: RwSignal::new(0),
             unread: RwSignal::new(false),
-            // last: RwSignal::new(msg.clone()),
             description: RwSignal::new(None),
             owner: acc,
             members: HashMap::new(),
@@ -71,14 +70,13 @@ impl IntoView for RoomCtx {
 
     fn into_view(self) -> Self::V {
         let state = use_context::<Rc<ChatState>>().unwrap();
-        let msgs_tracker = use_context::<Trigger>().unwrap();
+        // let msgs_tracker = use_context::<Trigger>().unwrap();
         let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
         let selected = Trigger::new();
         let need_update = Trigger::new();
 
         let state2 = state.clone();
         let state3 = state.clone();
-        let state4 = state.clone();
         let state5 = state.clone();
         let room = Rc::new(self);
         let room2 = room.clone();
@@ -117,15 +115,13 @@ impl IntoView for RoomCtx {
         let av = dyn_view(move || {
             need_update.track();
             trace!("dyn_view for avatar");
-            // -- Check if data changed
-
             img({
                 let st = state5.clone();
                 let room = room2.clone();
                 move || {
                     let img_data = st.data.with_untracked(|rooms| {
                         if let Some(msgs) = rooms.get(&room.id.id) {
-                            if let Some((id, msg_ctx)) = msgs.borrow().last_key_value() {
+                            if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
                                 if room.owner.acc_id == msg_ctx.msg.author {
                                     trace!("img author");
                                     room.owner.av.clone()
@@ -144,9 +140,6 @@ impl IntoView for RoomCtx {
             }).style(|s| s.size(50., 50.))
         })
         .style(|s| s
-            // .justify_center()
-            // .size(50., 50.)
-            // .max_size_full()
             .border(1.)
             .border_color(Color::NAVY)
             .border_radius(5.)
@@ -157,7 +150,7 @@ impl IntoView for RoomCtx {
             state.data.with_untracked(|data| {
                 trace!("author");
                 if let Some(msgs) = data.get(&room3.id.id) {
-                    if let Some((id, msg_ctx)) = msgs.borrow().last_key_value() {
+                    if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
                         msg_ctx.author.username.clone()
                     } else { "".into() }
                 } else { "".into() }
@@ -178,7 +171,7 @@ impl IntoView for RoomCtx {
             state2.data.with_untracked(|rooms| {
                 trace!("current text");
                 if let Some(msgs) = rooms.get(&room4.id.id) {
-                    if let Some((id, msg_ctx)) = msgs.borrow().last_key_value() {
+                    if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
                         msg_ctx.msg.text.current.clone()
                     } else { "no msgs yet..".into() }
                 } else { "no msgs yet..".into() }
@@ -186,7 +179,7 @@ impl IntoView for RoomCtx {
         });
         
 
-        let room_id = room5.id.clone();
+        // let room_id = room5.id.clone();
         create_effect(move |_| {
             selected.track();
             trace!("effect: 'select room'");
@@ -199,8 +192,8 @@ impl IntoView for RoomCtx {
             if need_upt {
                 trace!("into_view for RoomCtx: need_upt is `true`");
                 state3.active.set(Some(room.id.clone()));
-                msgs_tracker.notify();
                 msgs_trackerv2.set(Some(room.id.clone()));
+                // msgs_tracker.notify();
             }
         });
 
@@ -212,18 +205,21 @@ impl IntoView for RoomCtx {
         //     .style(|s| s.gap(10.).items_center())
         let top_view = (av, author)
             .h_stack()
+            .debug_name("top_room")
             .style(|s| s.gap(10.).items_center());
         let main_view = (top_view, last_msg)
             .v_stack()
+            .debug_name("main_room")
             .style(|s| s.gap(10.));
         
         main_view
             .container()
+            .debug_name("outer_main_room")
             .style(|s| s
                 .width_full()
                 .padding(2.)
                 .height(100.)
-                .border(1.)
+                .border(0.5)
                 .border_color(Color::NAVY))
             .into_any()
             .on_click_stop(move |_| {
