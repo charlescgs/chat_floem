@@ -65,7 +65,10 @@ impl ChatState {
 
 // -----------------------
 fn main() {
+    // -- Main UI state
     provide_context(Rc::new(ChatState::new()));
+    // -- Msg tracker
+    provide_context(RwSignal::new(None::<Id>));
     provide_context(Trigger::new());
     launch_with_config(app_view)
 }
@@ -111,6 +114,8 @@ fn toolbar_view() -> impl IntoView {
     let edit_list_signal = RwSignal::new(EditList::None);
     let new_list_signal = RwSignal::new(NewList::None);
     let msgs_tracker = use_context::<Trigger>().unwrap();
+    // -- Id is a room, that got an update
+    let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
 
     // -- Action to create test room on click
     create_effect(move |_| {
@@ -147,17 +152,18 @@ fn toolbar_view() -> impl IntoView {
                     let msg = MsgCtx::new_from_click(&active, &acc);
                     trace!("Created New MsgCtx");
                     // -- Save it
-                    state.data.update(|rooms| {
+                    state.data.with_untracked(|rooms| {
                         if rooms
-                        .get_mut(&active.id)
+                        .get(&active.id)
                         .unwrap()
-                        .get_mut()
+                        .borrow_mut()
                         .insert(msg.msg.msg_id.id, msg.clone())
                         .is_none() {
                             trace!("Inserted MsgCtx to state.rooms {}", active)
                         }
                     });
-                    msgs_tracker.notify()
+                    // -- Notify all subscribers that this room got an update
+                    msgs_trackerv2.set(Some(msg.room));
                 }
             },
             NewList::Account => {
@@ -231,7 +237,7 @@ fn rooms_view() -> impl IntoView {
                 state3.active
                     .get()
                     .is_some_and(|a|a.id == r_id.id),
-                    |s| s.background(Color::GRAY)
+                    |s| s.background(Color::LIGHT_GRAY).border(2).border_color(Color::DARK_BLUE)
             )
         )
     }).style(|s| s
@@ -271,11 +277,14 @@ fn msg_and_editor_view() -> impl IntoView {
 fn msgs_view() -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
     let msgs_trigger = use_context::<Trigger>().unwrap();
+    let msgs_triggerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
 
     let room_msgs = move || {
         trace!("->> derived_signal: msgs_view");
-        msgs_trigger.track();
-        if let Some(room) = state.active.get() {
+        if let Some(room) = msgs_triggerv2.get() {
+        //     if r_id == 
+        // }
+        // if let Some(room) = state.active.get_untracked() {
             trace!("1");
             state.data.with_untracked(|rooms| {
                 trace!("2");
@@ -307,6 +316,7 @@ fn msgs_view() -> impl IntoView {
         |(id, msg)| id.clone(),
         |(id, msg)| {
             debug!("->> dyn_stack: msg");
+            // let av = msg.author.av.clone();
             msg
         }
     ).style(|s| s.flex_col().padding(5.))

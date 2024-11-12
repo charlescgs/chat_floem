@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 
 use chrono_lite::Datetime;
+use floem::taffy::{AlignContent, AlignItems};
 use floem::{prelude::*, AnyView};
 
 use crate::cont::acc::Account;
@@ -68,11 +69,14 @@ impl IntoView for MsgCtx {
         (author, text, time.to_raw_compact())
             .v_stack()
             .style(|s| s
+                .flex_col()
+                .align_self(AlignItems::FlexEnd)
                 .border(1.)
                 .border_color(Color::BLACK)
                 .border_radius(4.)
-                .height(50.)
+                .height(70.)
                 .max_width_full()
+                .padding(5.)
             ).into_any()
     }
 }

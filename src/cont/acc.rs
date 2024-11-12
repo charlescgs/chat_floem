@@ -11,11 +11,11 @@ pub(super) static ACC_COUNTER: AtomicU8 = AtomicU8::new(0);
 
 
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Account {
     pub acc_id: Id,
     pub username: String,
-    pub av: Vec<u8>,
+    pub av: Rc<Vec<u8>>,
     // pub rooms: Vec<Id>
 }
 
@@ -25,7 +25,7 @@ impl Account {
             Some(Self {
                 acc_id: Id::new(Tb::Acc),
                 username: us,
-                av
+                av: Rc::new(av)
             })
         } else { None }
     }
