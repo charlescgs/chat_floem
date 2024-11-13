@@ -1,22 +1,22 @@
 use std::fs::OpenOptions;
-use std::io::{BufReader, BufWriter, Write};
-use std::ops::{Div, DivAssign, Mul, MulAssign};
+use std::io::BufReader;
+use std::ops::{DivAssign, MulAssign};
 
 use serde::{Deserialize, Serialize};
 use tracing_lite::error;
-
 use floem::action::{inspect, set_window_scale};
 use floem::event::{Event, EventListener, EventPropagation};
 use floem::keyboard::{Key, Modifiers, NamedKey};
 use floem::{prelude::*, Application};
 use floem::kurbo::{Point, Size};
-use floem::reactive::{create_updater, provide_context};
+use floem::reactive::provide_context;
 use floem::window::{Theme, WindowConfig};
 
 
 const CONFIG_PATH: &str = "cc.txt";
 
 
+/// Configuration struct for the chat client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
     theme: Theme,

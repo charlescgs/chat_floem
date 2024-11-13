@@ -9,7 +9,7 @@ use cont::acc::Account;
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
 use floem::reactive::{create_effect, provide_context, use_context, Trigger};
-use floem::taffy::{AlignContent, AlignItems, FlexDirection};
+use floem::taffy::{AlignContent, AlignItems, FlexDirection, Position};
 use tracing_lite::{debug, trace};
 use ulid::Ulid;
 use util::Id;
@@ -75,10 +75,12 @@ fn main() {
 }
 
 fn app_view() -> impl IntoView {
-    (toolbar_view(), central_view())
-        .v_stack()
+    (left_view(), right_view())
+        .h_stack()
         .style(|s| s
             .size_full()
+            .min_size_full()
+            .max_size_full()
         )
         // .clip()
         // .style(|s| )
@@ -191,15 +193,15 @@ fn toolbar_view() -> impl IntoView {
     
     let new_menu = "New".button().popout_menu(move || {
         Menu::new("")
-            .entry(MenuItem::new("Account").action(move || {
-                new_list_signal.set(NewList::Account);
+            .entry(MenuItem::new("Msg").action(move || {
+                new_list_signal.set(NewList::Msg);
             }))
             .entry(MenuItem::new("Room").action(move || {
                 new_list_signal.set(NewList::Room);
             }))
             .separator()
-            .entry(MenuItem::new("Msg").action(move || {
-                new_list_signal.set(NewList::Msg);
+            .entry(MenuItem::new("Account").action(move || {
+                new_list_signal.set(NewList::Account);
             }))
     });
 
@@ -224,10 +226,12 @@ fn toolbar_view() -> impl IntoView {
     ).h_stack()
     .debug_name("toolbar")
     .style(|s| s
-        .padding(5.)
-        .height(35.)
-        .width_full()
-        .gap(5.)
+        // .justify_center()
+        .justify_between()
+        // .padding(5.)
+        // .height(35.)
+        // .width_full()
+        // .gap(5.)
     )
 }
 
@@ -265,16 +269,28 @@ fn rooms_view() -> impl IntoView {
     .debug_name("rooms list")
     // .style(|s| s.min_size_full().max_height_full())
     .scroll()
-    // .style(|s| s.padding(10).padding_right(10))
+    .style(|s| s.padding(5).padding_right(10))
     .scroll_style(|s| s.handle_thickness(6.))
+    .debug_name("rooms scroll")
 }
 
-fn central_view() -> impl IntoView {
-    (rooms_view(), msg_and_editor_view())
-        .h_stack()
-        .debug_name("central")
+fn left_view() -> impl IntoView {
+    (toolbar_view(), rooms_view())
+        .v_stack()
+        .debug_name("left")
         .style(|s| s
-            .size_full()
+            // .size_full()
+            // .min_size_full()
+            // .max_size_full()
+        )
+}
+
+fn right_view() -> impl IntoView {
+    (rooms_view(), msg_and_editor_view())
+        .v_stack()
+        .debug_name("right")
+        .style(|s| s
+            // .size_full()
             // .min_size_full()
             // .max_size_full()
         )
@@ -290,11 +306,12 @@ fn msg_and_editor_view() -> impl IntoView {
     //         .max_size_full()
     //         // .flex_basis(1)
     //     );
-    (msgs_view(), editor_view())
+    (editor_view(), msgs_view())
         .v_stack()
         .debug_name("msgs and editor")
         .style(|s| s
             .size_full()
+            .flex_direction(FlexDirection::ColumnReverse)
             // .align_content(AlignContent::Stretch)
             // .flex_basis(-2)
             // .min_size_full()
@@ -352,7 +369,7 @@ fn msgs_view() -> impl IntoView {
     .style(|s| s
         .flex_col()
         // .flex_shrink(0.)
-        .flex_direction(FlexDirection::Column)
+        // .flex_direction(FlexDirection::ColumnReverse)
         // .min_size(0, 0)
         // .min_width(200.)
         // .height_full()
@@ -360,29 +377,34 @@ fn msgs_view() -> impl IntoView {
         // .max_height_full()
         .padding(2.)
         .gap(2.)
-        // .border(1.)
-        // .border_radius(5.)
-        // .border_color(Color::BLACK)
+        .border(1.)
+        .border_radius(5.)
+        .border_color(Color::DARK_MAGENTA)
         // .align_items(AlignItems::Baseline)
         // .align_content(AlignContent::Stretch)
         .size_full()
-        .min_size_full()
-        .max_size_full()
+        // .min_size_full()
+        // .max_size_full()
         // .padding(2.)
         // .column_gap(5.)
+        // .height_pct(80.)
+        // .min_height_pct(80.)
+        // .max_height_full()
+        // .max_height_pct(80.)
+        // .align_self(AlignItems::Stretch)
+        // .align_content(AlignContent::FlexEnd)
     )
     .container()
         .style(|s| s
-            // .height_pct(80.)
+    //         // .height_pct(80.)
             .width_full()
-            // .max_height_full()
-            // .min_size_full()
-            // .max_size_full()
-            // .max_size_full()
-        .align_self(AlignItems::End)
+            .max_width_full()
+            // .min_height_pct(90.)
+    //         // .min_size_full()
+    //         // .max_size_full()
+    //         // .max_size_full()
+        // .align_self(AlignItems::End)
         // .size_full()
-        // .min_size_full()
-        // .max_size_full()
 
     )
     .scroll()
@@ -392,10 +414,13 @@ fn msgs_view() -> impl IntoView {
         // .width_pct(95.)
         // .width_full()
         // .max_width_full()
-    // // //     .align_content(AlignContent::FlexStart)
+    //     .align_content(AlignContent::FlexStart)
         // .height_pct(80.)
         // .min_height_pct(80.)
         // .max_height_pct(80.)
+        
+        .align_content(AlignContent::Start)
+        // .min_height_full()
         .size_full()
         .max_size_full()
         .border(1.)
@@ -404,14 +429,14 @@ fn msgs_view() -> impl IntoView {
         .padding(5.)
     )
     .debug_name("msgs list")
-    .container()
-    .style(|s| s
-        .height_pct(80.)
-        .min_height_pct(80.)
-        .max_height_pct(80.)
-        .align_self(AlignItems::Stretch)
-        .align_content(AlignContent::End)
-    )
+    // .container()
+    // .style(|s| s
+    //     .height_pct(80.)
+    //     .min_height_pct(80.)
+    //     .max_height_pct(80.)
+    //     .align_self(AlignItems::Stretch)
+    //     .align_content(AlignContent::End)
+    // )
 }
 
 // MARK: editor
