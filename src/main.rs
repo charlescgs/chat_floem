@@ -6,10 +6,11 @@ use std::rc::Rc;
 
 use config::launch_with_config;
 use cont::acc::Account;
+use editor::text::{default_light_theme, SimpleStyling};
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
-use floem::reactive::{create_effect, provide_context, use_context, Trigger};
-use floem::taffy::{AlignContent, AlignItems, FlexDirection, Position};
+use floem::reactive::{create_effect, provide_context, use_context};
+use floem::taffy::{AlignItems, FlexDirection};
 use tracing_lite::{debug, trace};
 use ulid::Ulid;
 use util::Id;
@@ -46,7 +47,7 @@ pub struct ChatState {
     /// An active room (if any).
     pub active: RwSignal<Option<Id>>,
     /// Map with:
-    /// K: [Id] of a room
+    /// K: [Ulid] of a room
     /// V: Ordered map of [MsgCtx] with its Id.
     pub data: RwSignal<HashMap<Ulid, RefCell<BTreeMap<Ulid, MsgCtx>>>>,
 }
@@ -75,18 +76,23 @@ fn main() {
 }
 
 fn app_view() -> impl IntoView {
-    (left_view(), right_view())
-        .h_stack()
+    stack((left_view(), right_view()))
+        .debug_name("main")
         .style(|s| s
             .size_full()
-            .min_size_full()
-            .max_size_full()
+            .padding(5.)
+            .gap(5.)
         )
-        // .clip()
-        // .style(|s| )
-        // .container()
-        // .style(|s| s.width_pct(85.).min_width_pct(85.).max_width_pct(85.).max_height_full())
 }
+// fn app_view() -> impl IntoView {
+//     (left_view(), right_view())
+//         .h_stack()
+//         .style(|s| s
+//             .size_full()
+//             .min_size_full()
+//             .max_size_full()
+//         )
+// }
 // -----------------------
 
 #[derive(Clone, Debug)]
@@ -253,47 +259,65 @@ fn rooms_view() -> impl IntoView {
                     |s| s.background(Color::LIGHT_GRAY).border(2).border_color(Color::DARK_BLUE)
             )
         )
-    }).style(|s| s
+    }).debug_name("rooms list")
+    .style(|s| s
         .flex_col()
-        // .min_size(0, 0)
-        .min_width(200.)
-        .height_full()
-        // .min_height_full()
-        .max_height_full()
-        // .padding(2.)
-        .gap(2.)
-        .border(1.)
-        .border_radius(5.)
-        .border_color(Color::BLACK)
-    ).container()
-    .debug_name("rooms list")
+        .width_full()
+        .column_gap(5.)
+    )
     // .style(|s| s.min_size_full().max_height_full())
     .scroll()
-    .style(|s| s.padding(5).padding_right(10))
-    .scroll_style(|s| s.handle_thickness(6.))
     .debug_name("rooms scroll")
+    .style(|s| s
+        .size_full()
+        .padding(5.)
+        .padding_right(7.)
+    )
+    .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
 }
 
 fn left_view() -> impl IntoView {
-    (toolbar_view(), rooms_view())
+    (
+        toolbar_view()
+            .debug_name("toolbar")
+            .style(|s| s
+                .align_items(AlignItems::Center)
+                .justify_between()
+                .border_bottom(0.5)
+                .border_color(Color::BLACK)
+                .padding(5.)
+                .size_full()
+                .flex_basis(35.)
+                .flex_grow(0.)
+                .flex_shrink(0.)
+            ),
+        rooms_view()
+    )
         .v_stack()
         .debug_name("left")
         .style(|s| s
-            // .size_full()
-            // .min_size_full()
-            // .max_size_full()
-        )
+            .border(2.)
+            .border_color(Color::BLACK)
+            .border_radius(5.)
+            .flex_grow(0.)
+            .flex_shrink(0.)
+            .flex_basis(200.)
+        ).clip()
 }
 
 fn right_view() -> impl IntoView {
-    (rooms_view(), msg_and_editor_view())
+    (msgs_view(), editor_view())
         .v_stack()
         .debug_name("right")
         .style(|s| s
-            // .size_full()
-            // .min_size_full()
-            // .max_size_full()
-        )
+            .flex_direction(FlexDirection::Column)
+            .border(2.)
+            .border_color(Color::NAVY)
+            .border_radius(5.)
+            .flex_grow(1.)
+            .flex_shrink(1.)
+            .flex_basis(500.)
+        ).clip().style(|s| s.size_full())
 }
 
 fn msg_and_editor_view() -> impl IntoView {
@@ -351,112 +375,84 @@ fn msgs_view() -> impl IntoView {
 
     dyn_stack(
         move || {
-            // msgs_trigger.track();
             let msgs = room_msgs();
-            msgs.into_inner().into_iter()
+            msgs.into_inner().into_iter().rev()
         },
         |(id, _msg)| id.clone(),
         |(_id, msg)| {
             debug!("->> dyn_stack: msg");
-            let is_owner = msg.room_owner;
+            let id = msg.id.id.0;
+            // let _is_owner = msg.room_owner;
             msg
                 .style(move |s| s.apply_if(
-                    is_owner,
+                    id % 2 == 0, // for now
+                    // is_owner,
                     |s| s.align_self(AlignItems::End)
                 ))
             }
-    )
+    ).debug_name("msgs list")
     .style(|s| s
-        .flex_col()
-        // .flex_shrink(0.)
-        // .flex_direction(FlexDirection::ColumnReverse)
-        // .min_size(0, 0)
-        // .min_width(200.)
-        // .height_full()
-        // .min_height_full()
-        // .max_height_full()
-        .padding(2.)
-        .gap(2.)
-        .border(1.)
-        .border_radius(5.)
-        .border_color(Color::DARK_MAGENTA)
-        // .align_items(AlignItems::Baseline)
-        // .align_content(AlignContent::Stretch)
-        .size_full()
-        // .min_size_full()
-        // .max_size_full()
-        // .padding(2.)
-        // .column_gap(5.)
-        // .height_pct(80.)
-        // .min_height_pct(80.)
-        // .max_height_full()
-        // .max_height_pct(80.)
-        // .align_self(AlignItems::Stretch)
-        // .align_content(AlignContent::FlexEnd)
-    )
-    .container()
-        .style(|s| s
-    //         // .height_pct(80.)
-            .width_full()
-            .max_width_full()
-            // .min_height_pct(90.)
-    //         // .min_size_full()
-    //         // .max_size_full()
-    //         // .max_size_full()
-        // .align_self(AlignItems::End)
-        // .size_full()
-
+        .flex_direction(FlexDirection::ColumnReverse)
+        .width_full()
+        .min_height_full()
+        .align_items(AlignItems::Start)
+        .column_gap(5.)
     )
     .scroll()
-    .scroll_style(|s| s.overflow_clip(true))
-    // .style(|s| s.align_content(AlignContent::FlexEnd))
+    .debug_name("msgs scroll")
+    .scroll_to_percent(move || {
+        msgs_triggerv2.track();
+        100.
+    })
     .style(|s| s
-        // .width_pct(95.)
-        // .width_full()
-        // .max_width_full()
-    //     .align_content(AlignContent::FlexStart)
-        // .height_pct(80.)
-        // .min_height_pct(80.)
-        // .max_height_pct(80.)
-        
-        .align_content(AlignContent::Start)
-        // .min_height_full()
         .size_full()
-        .max_size_full()
-        .border(1.)
-        .border_color(Color::OLIVE)
-        .border_radius(5.)
         .padding(5.)
+        .padding_right(7.)
     )
-    .debug_name("msgs list")
-    // .container()
-    // .style(|s| s
-    //     .height_pct(80.)
-    //     .min_height_pct(80.)
-    //     .max_height_pct(80.)
-    //     .align_self(AlignItems::Stretch)
-    //     .align_content(AlignContent::End)
-    // )
+    .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
 }
 
 // MARK: editor
 
 fn editor_view() -> impl IntoView {
-    empty()
-        .style(|s| s
-            // .width_pct(95.)
-            // .max_width_full()
-            // .height(80.)
-            // .width_full()
-            // .min_width_full()
-            .height_pct(20.)
-            .min_height_pct(20.)
-            .max_height_pct(20.)
-            // .max_height(80.)
-            // .background(Color::LIGHT_SALMON)
-            .border(1.)
-            .border_color(Color::DARK_MAGENTA)
+    let editor = text_editor("New message")
+    .styling(SimpleStyling::new())
+    .style(|s| s.size_full())
+    .editor_style(default_light_theme)
+    .editor_style(|s| s.hide_gutter(true));
+
+    h_stack((
+        container(editor).style(|s| s
+            .flex_grow(1.)
+            .flex_shrink(2.)
+            .flex_basis(300.)
+            .min_width(100.)
+            .border(0.5)
+            .border_color(Color::NAVY)
             .border_radius(5.)
-            // .padding(5.)
-        ).debug_name("editor")
+            .padding(5.)
+        ),
+        v_stack((
+            button("Send"),
+            button("Attach"),
+        )).debug_name("editor buttons")
+        .style(|s| s
+            .flex_grow(0.)
+            .flex_shrink(0.)
+            .flex_basis(50.)
+            .border(0.5)
+            .border_color(Color::NAVY)
+            .border_radius(5.)
+            .padding(2.)
+            .column_gap(2.)
+        ),
+    )).debug_name("text editor")
+    .style(|s| s
+        .flex_basis(100.)
+        .flex_grow(0.)
+        .flex_shrink(0.)
+        .border(1.)
+        .border_color(Color::DARK_GREEN)
+        .border_radius(5.)
+    )
 }

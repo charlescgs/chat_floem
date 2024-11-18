@@ -328,9 +328,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aeb932158bd710538c73702db6945cb68a8fb08c519e6e12706b94263b36db8"
+checksum = "fd9de9f2205d5ef3fd67e685b0df337994ddd4495e2a28d185500d0e1edfea47"
 dependencies = [
  "jobserver",
  "libc",
@@ -865,9 +865,9 @@ dependencies = [
 
 [[package]]
 name = "flate2"
-version = "1.0.34"
+version = "1.0.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1b589b4dc103969ad3cf85c950899926ec64300a1a46d76c03a6072957036f0"
+checksum = "c936bfdafb507ebbf50b8074c54fa31c5be9a1e7e5f467dd659697041407d07c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -881,7 +881,7 @@ checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 
 [[package]]
 name = "floem"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bitflags 2.6.0",
  "clipboard-win",
@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "floem-editor-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bitflags 2.6.0",
  "itertools",
@@ -932,8 +932,9 @@ dependencies = [
 
 [[package]]
 name = "floem-winit"
-version = "0.29.4"
-source = "git+https://github.com/lapce/winit?rev=c8d3b8fd6fa4ffd5e0f99be78aacddcf6de57bcd#c8d3b8fd6fa4ffd5e0f99be78aacddcf6de57bcd"
+version = "0.29.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3991fdca0ba5ea682c6ecd8ab1a75c257376e75430d9020c2a80c48bb72fc98"
 dependencies = [
  "ahash",
  "android-activity",
@@ -981,14 +982,14 @@ dependencies = [
 
 [[package]]
 name = "floem_reactive"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "smallvec",
 ]
 
 [[package]]
 name = "floem_renderer"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "cosmic-text",
  "crossbeam",
@@ -1005,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "floem_tiny_skia_renderer"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1021,7 +1022,7 @@ dependencies = [
 
 [[package]]
 name = "floem_vello_renderer"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "floem_renderer",
@@ -1617,6 +1618,7 @@ version = "0.1.0"
 dependencies = [
  "chat_floem",
  "floem",
+ "im",
 ]
 
 [[package]]
@@ -1627,9 +1629,9 @@ checksum = "10257499f089cd156ad82d0a9cd57d9501fa2c989068992a97eb3c27836f206b"
 
 [[package]]
 name = "libc"
-version = "0.2.162"
+version = "0.2.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18d287de67fe55fd7e1581fe933d965a5a9477b38e949cfa9f8574ef01506398"
+checksum = "433bfe06b8c75da9b2e3fbea6e5329ff87748f0b144ef75306e674c3f6f7c13f"
 
 [[package]]
 name = "libloading"
@@ -2428,9 +2430,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.132"
+version = "1.0.133"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d726bfaff4b320266d395898905d0eba0345aae23b54aee3a737e260fd46db03"
+checksum = "c7fceb2473b9166b2294ef05efcb65a3db80803f0b03ef86a5fc88a2b85ee377"
 dependencies = [
  "itoa",
  "memchr",
@@ -2654,6 +2656,9 @@ name = "strum"
 version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
+dependencies = [
+ "strum_macros",
+]
 
 [[package]]
 name = "strum_macros"
