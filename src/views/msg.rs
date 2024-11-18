@@ -26,6 +26,17 @@ pub struct MsgCtx {
 }
 
 impl MsgCtx {
+    pub fn new(msg: Msg, author: &Account, owner: bool) -> Self {
+        Self {
+            id: msg.msg_id.clone(),
+            author: Rc::new(author.clone()),
+            room: msg.room_id.clone(),
+            com: RwSignal::new(None),
+            rea: RwSignal::new(None),
+            msg: Rc::new(msg),
+            room_owner: owner
+        }
+    }
     pub fn new_from_click(room: &Id, author: &Account) -> Self {
         let msg_id = Id::new(Tb::Msg);
         let m = Msg {
@@ -80,14 +91,10 @@ impl IntoView for MsgCtx {
                 .justify_between()
                 .border(1.)
                 .border_color(Color::BLACK)
-                .border_radius(4.)
-                .height(70.)
+                .border_radius(5.)
                 .min_height(70.)
-                // .max_height(70.)
-                // .min_width_full()
-                // .max_width_full()c
+                .max_width_full()
                 .padding(5.)
-                // .apply_if(self.room_owner, |s| s.align_self(AlignItems::End))
             ).into_any()
     }
 }

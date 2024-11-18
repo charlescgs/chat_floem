@@ -4,16 +4,20 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::rc::Rc;
 
+use chrono_lite::Datetime;
 use config::launch_with_config;
 use cont::acc::Account;
+use cont::msg::{Msg, Text};
+use editor::core::editor::EditType;
+use editor::core::selection::{SelRegion, Selection};
 use editor::text::{default_light_theme, SimpleStyling};
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
-use floem::reactive::{create_effect, provide_context, use_context};
+use floem::reactive::{batch, create_effect, provide_context, use_context, Trigger};
 use floem::taffy::{AlignItems, FlexDirection};
-use tracing_lite::{debug, trace};
+use tracing_lite::{debug, info, trace};
 use ulid::Ulid;
-use util::Id;
+use util::{Id, Tb};
 use views::msg::MsgCtx;
 use views::room::RoomCtx;
 
@@ -45,7 +49,7 @@ pub struct ChatState {
     /// List of all user rooms.
     pub rooms: RwSignal<BTreeMap<Ulid, RoomCtx>>,
     /// An active room (if any).
-    pub active: RwSignal<Option<Id>>,
+    pub active_room: RwSignal<Option<Id>>,
     /// Map with:
     /// K: [Ulid] of a room
     /// V: Ordered map of [MsgCtx] with its Id.
@@ -57,7 +61,7 @@ impl ChatState {
         Self {
             accounts: RwSignal::new(HashMap::new()),
             rooms: RwSignal::new(BTreeMap::new()),
-            active: RwSignal::new(None),
+            active_room: RwSignal::new(None),
             data: RwSignal::new(HashMap::new()),
         }
     }
@@ -84,15 +88,7 @@ fn app_view() -> impl IntoView {
             .gap(5.)
         )
 }
-// fn app_view() -> impl IntoView {
-//     (left_view(), right_view())
-//         .h_stack()
-//         .style(|s| s
-//             .size_full()
-//             .min_size_full()
-//             .max_size_full()
-//         )
-// }
+
 // -----------------------
 
 #[derive(Clone, Debug)]
@@ -142,9 +138,11 @@ fn toolbar_view() -> impl IntoView {
                 let state = use_context::<Rc<ChatState>>().unwrap();
 
                 let room = RoomCtx::new_from_click(state.clone());
-                state.accounts.update(|accs| { accs.insert(room.owner.acc_id.id.clone(), room.owner.clone());} );
-                state.rooms.update(|rooms| { rooms.insert(room.id.id.clone(), room.clone());} );
-                state.data.update(|data| { data.insert(room.id.id.clone(), RefCell::new(BTreeMap::new())); });
+                batch(|| {
+                    state.accounts.update(|accs| { accs.insert(room.owner.acc_id.id.clone(), room.owner.clone());} );
+                    state.rooms.update(|rooms| { rooms.insert(room.id.id.clone(), room.clone());} );
+                    state.data.update(|data| { data.insert(room.id.id.clone(), RefCell::new(BTreeMap::new())); });
+                });
                 trace!("Created and inserted test RoomCtx")
                 
             },
@@ -152,7 +150,7 @@ fn toolbar_view() -> impl IntoView {
                 trace!("Clicked NewList::Msg");
                 let state = use_context::<Rc<ChatState>>().unwrap();
                 // -- Get active room
-                if let Some(active) = state.active.get_untracked() {
+                if let Some(active) = state.active_room.get_untracked() {
                     // -- Get some account from that room
                     let acc = state.rooms.with_untracked(|r| {
                         let room = r.get(&active.id).unwrap();
@@ -190,12 +188,6 @@ fn toolbar_view() -> impl IntoView {
             }
         }
     });
-
-    // -- Action to create test room on click
-    // create_effect(move |_| {
-    //     trace!("create_effect for `Edit Menu`");
-    //     debug!("Clicked EditMenu::{:?}", edit_list_signal.get());
-    // });
     
     let new_menu = "New".button().popout_menu(move || {
         Menu::new("")
@@ -232,12 +224,7 @@ fn toolbar_view() -> impl IntoView {
     ).h_stack()
     .debug_name("toolbar")
     .style(|s| s
-        // .justify_center()
         .justify_between()
-        // .padding(5.)
-        // .height(35.)
-        // .width_full()
-        // .gap(5.)
     )
 }
 
@@ -245,15 +232,13 @@ fn toolbar_view() -> impl IntoView {
 
 fn rooms_view() -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
-    // let active = move || state.active.get();
     let state2 = state.clone();
     dyn_stack(move || state.rooms.get(), |(s, _)| s.clone(), move |(s, r)| {
         let state3 = state2.clone();
         let r_id = r.id.clone();
         r.style(move |s| 
             s.apply_if(
-                // state3.active.track();
-                state3.active
+                state3.active_room
                     .get()
                     .is_some_and(|a|a.id == r_id.id),
                     |s| s.background(Color::LIGHT_GRAY).border(2).border_color(Color::DARK_BLUE)
@@ -265,7 +250,6 @@ fn rooms_view() -> impl IntoView {
         .width_full()
         .column_gap(5.)
     )
-    // .style(|s| s.min_size_full().max_height_full())
     .scroll()
     .debug_name("rooms scroll")
     .style(|s| s
@@ -321,26 +305,13 @@ fn right_view() -> impl IntoView {
 }
 
 fn msg_and_editor_view() -> impl IntoView {
-    // let msgs = (msgs_view(),)
-    //     .h_stack()
-    //     .debug_name("msgs")
-    //     .style(|s| s
-    //         .size_full()
-    //         .min_size_full()
-    //         .max_size_full()
-    //         // .flex_basis(1)
-    //     );
     (editor_view(), msgs_view())
         .v_stack()
         .debug_name("msgs and editor")
         .style(|s| s
             .size_full()
             .flex_direction(FlexDirection::ColumnReverse)
-            // .align_content(AlignContent::Stretch)
-            // .flex_basis(-2)
-            // .min_size_full()
             .max_size_full()
-            // .flex_basis(0)
         )
 }
 
@@ -415,14 +386,89 @@ fn msgs_view() -> impl IntoView {
 // MARK: editor
 
 fn editor_view() -> impl IntoView {
-    let editor = text_editor("New message")
-    .styling(SimpleStyling::new())
-    .style(|s| s.size_full())
-    .editor_style(default_light_theme)
-    .editor_style(|s| s.hide_gutter(true));
+    let state = use_context::<Rc<ChatState>>().unwrap();
+    let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
+    let send_msg = Trigger::new();
 
+    let editor = text_editor("New message")
+        .styling(SimpleStyling::new())
+        .style(|s| s.size_full())
+        .editor_style(default_light_theme)
+        .editor_style(|s| s.hide_gutter(true));
+
+    let doc = editor.doc();
+    let editor_id = editor.id().children().last().unwrap().clone();
+    // let editor_id = editor_id.children().last().unwrap().clone();
+    // let editor_id = editor_id.children().last().unwrap().clone();
+    let doc_signal = RwSignal::new(doc);
+
+    create_effect(move |_| {
+        info!("effect: create msg");
+        send_msg.track();
+        let text = doc_signal.with_untracked(|doc| {
+            doc.rope_text().text.to_string()
+        });
+        if text.is_empty() { return };
+        // trace!("document text: {text}");
+        // -- Get active room
+        if let Some(active_room) = state.active_room.get_untracked() {
+            // trace!("act_room: {active_room}");
+            // -- Get message author (dummy for now)
+            let (msg_author, owner) = {
+                let room = state.rooms.get_untracked();
+                let room = room.get(&active_room.id).unwrap();
+                if room.members.is_empty() {
+                    (room.owner.clone(), true)
+                } else {
+                    (room.members.values().last().unwrap().clone(), false)
+                }
+            };
+    
+            // -- Create new message
+            let new_msg = Msg {
+                msg_id: Id::new(Tb::Msg),
+                room_id: active_room.clone(),
+                author: msg_author.acc_id.clone(),
+                created: Datetime::default(),
+                sent: None,
+                text: Text {
+                    current: text,
+                    edits: None,
+                    last_edited: None
+                },
+                media: None,
+                edited: None,
+                comments: None,
+                reactions: None,
+                delivered_to_all: false,
+                viewed_by_all: false
+            };
+            let new_msg = MsgCtx::new(new_msg, &msg_author, owner);
+            state.data.with_untracked(|rooms| {
+                if rooms
+                .get(&active_room.id)
+                .unwrap()
+                .borrow_mut()
+                .insert(new_msg.msg.msg_id.id, new_msg)
+                .is_none() {
+                    trace!("Inserted new MsgCtx to state.rooms")
+                }
+            });
+            msgs_trackerv2.set(Some(active_room));
+            doc_signal.update(|d| {
+                let t = d.text();
+                trace!("text len: {}", t.len());
+                let mut sel = Selection::new();
+                sel.add_region(SelRegion::new(0, t.len(), None));
+                d.edit_single(sel, "", EditType::Delete);
+            });
+            editor_id.request_focus();
+        }
+    });
+    
     h_stack((
-        container(editor).style(|s| s
+        container(editor)
+        .style(|s| s
             .flex_grow(1.)
             .flex_shrink(2.)
             .flex_basis(300.)
@@ -433,7 +479,9 @@ fn editor_view() -> impl IntoView {
             .padding(5.)
         ),
         v_stack((
-            button("Send"),
+            button("Send").action(move || {
+                send_msg.notify();
+            }).clear_focus(move || send_msg.track()),
             button("Attach"),
         )).debug_name("editor buttons")
         .style(|s| s

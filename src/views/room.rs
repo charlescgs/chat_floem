@@ -183,7 +183,7 @@ impl IntoView for RoomCtx {
         create_effect(move |_| {
             selected.track();
             trace!("effect: 'select room'");
-            let need_upt = state3.active.with_untracked(|act| {
+            let need_upt = state3.active_room.with_untracked(|act| {
                 match act {
                     Some(id) if id == &room5.id => false,
                     _ => true
@@ -191,7 +191,7 @@ impl IntoView for RoomCtx {
             });
             if need_upt {
                 trace!("into_view for RoomCtx: need_upt is `true`");
-                state3.active.set(Some(room.id.clone()));
+                state3.active_room.set(Some(room.id.clone()));
                 msgs_trackerv2.set(Some(room.id.clone()));
                 // msgs_tracker.notify();
             }
