@@ -36,7 +36,6 @@ pub struct RoomCtx {
     pub label: RwSignal<RoomLabel>,
     pub owner: Account,
     pub members: HashMap<Ulid, Account>,
-    // pub msgs: RwSignal<BTreeMap<Ulid, MsgCtx>>,
     pub last: RwSignal<Option<MsgCtx>>,
     pub unread: RwSignal<bool>,
     pub num_unread: RwSignal<u16>,
@@ -70,7 +69,6 @@ impl IntoView for RoomCtx {
 
     fn into_view(self) -> Self::V {
         let state = use_context::<Rc<ChatState>>().unwrap();
-        // let msgs_tracker = use_context::<Trigger>().unwrap();
         let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
         let selected = Trigger::new();
         let need_update = Trigger::new();
@@ -164,22 +162,26 @@ impl IntoView for RoomCtx {
         
         let last_msg = label(move || {
             need_update.track();
-            // let (av, us, tx) = last_msg_memo.get_untracked();
-            // (img(move || av.clone()),
-            // label(move || us.clone()),
-            // label(move || tx.clone()))
+
             state2.data.with_untracked(|rooms| {
                 trace!("current text");
                 if let Some(msgs) = rooms.get(&room4.id.id) {
                     if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
-                        msg_ctx.msg.text.current.clone()
+                        let text = msg_ctx.msg.text.current.clone();
+                        let more_than_two_columns = text.lines().count() > 2;
+                        // -- trim msg if needed
+                        if more_than_two_columns {
+                            let mut t: String = text.lines().take(2).collect();
+                            t.push_str("...");
+                            t
+                        } else {
+                            text
+                        }
                     } else { "no msgs yet..".into() }
                 } else { "no msgs yet..".into() }
             })
-        });
+        }).style(|s| s.max_size_full().text_ellipsis());
         
-
-        // let room_id = room5.id.clone();
         create_effect(move |_| {
             selected.track();
             trace!("effect: 'select room'");
@@ -193,16 +195,9 @@ impl IntoView for RoomCtx {
                 trace!("into_view for RoomCtx: need_upt is `true`");
                 state3.active_room.set(Some(room.id.clone()));
                 msgs_trackerv2.set(Some(room.id.clone()));
-                // msgs_tracker.notify();
             }
         });
 
-        
-        // let us = move || last_msg_memo.with_untracked(|lm| lm.1.clone());
-        // let text = move || last_msg_memo.with_untracked(|lm| lm.2.clone());
-        // last_msg()
-        //     .h_stack()
-        //     .style(|s| s.gap(10.).items_center())
         let top_view = (av, author)
             .h_stack()
             .debug_name("top_room")
@@ -210,15 +205,15 @@ impl IntoView for RoomCtx {
         let main_view = (top_view, last_msg)
             .v_stack()
             .debug_name("main_room")
-            .style(|s| s.gap(10.));
+            .style(|s| s.max_size_full().gap(10.));
         
         main_view
             .container()
             .debug_name("outer_main_room")
             .style(|s| s
-                .width_full()
+                .max_width(200.)
                 .padding(2.)
-                .height(100.)
+                .max_height(100.)
                 .border(0.5)
                 .border_color(Color::NAVY))
             .into_any()

@@ -1,10 +1,13 @@
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 
 use chrono_lite::Datetime;
+use floem::style::TextOverflow;
 use floem::taffy::AlignItems;
 use floem::{prelude::*, AnyView};
+use ulid::Ulid;
 
 use crate::cont::acc::Account;
 use crate::cont::msg::{Msg, Text};
@@ -81,22 +84,39 @@ impl IntoView for MsgCtx {
         let author = self.author.username.clone();
         (
             author.style(|s| s.color(Color::GRAY)),
-            text,
-            time.to_raw_compact().style(|s| s.color(Color::GRAY))
+            text
+                .style(|s| s
+                    // .border(1.)
+                    // .text_overflow(TextOverflow::Wrap)
+                    // .border_color(Color::BLACK)
+                    // .flex_grow(1.)
+                    // .max_height_full()
+                ),
+            time.human_formatted().style(|s| s.color(Color::GRAY))
         )
             .v_stack()
             .debug_name("msg")
             .style(move |s| s
-                // .align_self(AlignItems::FlexEnd)
-                .justify_between()
+                // .justify_between()
                 .border(1.)
                 .border_color(Color::BLACK)
                 .border_radius(5.)
-                .min_height(70.)
-                .max_width_full()
                 .padding(5.)
-            ).into_any()
+                // .text_overflow(TextOverflow::Wrap)
+                // .max_height_full()
+                // .max_width_full()
+                .min_height(50.)
+                // .max_width_pct(80.)
+                // .flex_basis(70.)
+                // .flex_grow(0.)
+                // .flex_shrink(1.)
+            )
+            .into_any()
     }
+}
+
+pub fn layout_text(text: String) -> Label {
+    todo!()
 }
 
 
@@ -114,3 +134,36 @@ pub struct ReaCtx {
 
 
 
+// MARK: Chunks
+
+
+/// Struct holding info regarding msgs for the room.
+/// 
+/// 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoomMsgChunks {
+    /// Total room msgs.
+    pub total_msgs: u16,
+    /// Total room msgs.
+    pub chunks_count: u8,
+    /// Msgs as chunks.
+    pub chunks: Vec<Rc<MsgChunk>>,
+    /// Displayed chunk index.
+    pub chunk_on_display: u8,
+    // pub from: Ulid,
+    // pub to: Ulid
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MsgChunk {
+    /// Max: 20 (for now).
+    pub count: u8,
+    pub msgs: BTreeMap<Ulid, MsgCtx>
+}
+
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LoadedRange {
+    
+}
