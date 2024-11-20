@@ -1,10 +1,11 @@
 #![allow(unused)]
 use std::cell::RefCell;
-use std::collections::btree_map::Range;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
-use std::ops::{Bound, RangeInclusive};
+use std::ops::Bound;
 use std::rc::Rc;
+use std::thread::sleep;
+use std::time::Duration;
 
 use chrono_lite::Datetime;
 use config::launch_with_config;
@@ -13,18 +14,16 @@ use cont::msg::{Msg, Text};
 use editor::core::editor::EditType;
 use editor::core::selection::{SelRegion, Selection};
 use editor::text::{default_light_theme, SimpleStyling};
-use editor::view::editor_view;
 use floem::kurbo::Rect;
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
-use floem::reactive::{batch, create_effect, create_updater, provide_context, use_context, Trigger};
-use floem::style::TextOverflow;
+use floem::reactive::{batch, create_effect, provide_context, use_context, Trigger};
 use floem::taffy::prelude::{minmax, TaffyGridLine};
 use floem::taffy::{AlignContent, AlignItems, FlexDirection, GridPlacement, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
 use tracing_lite::{debug, info, trace};
 use ulid::Ulid;
 use util::{Id, Tb};
-use views::msg::MsgCtx;
+use views::msg::{MsgCtx, RoomMsgChunks};
 use views::room::RoomCtx;
 
 pub mod element;
@@ -241,6 +240,7 @@ fn toolbar_view() -> impl IntoView {
                     // -- Create Msgs
                     let mut msgs_vec = Vec::with_capacity(40);
                     for _ in 0..40 {
+                        sleep(Duration::from_millis(1));
                         let msg = MsgCtx::new_from_click(&active, &acc);
                         msgs_vec.push(msg);
                     }
@@ -253,7 +253,7 @@ fn toolbar_view() -> impl IntoView {
                             .unwrap()
                             .borrow_mut();
                         for each in msgs_vec {
-                            map.insert(each.msg.msg_id.id, each);
+                            map.insert(each.id.id, each);
                         }
                         trace!("Inserted MsgCtx to state.rooms {}", active)
                     });
@@ -338,10 +338,10 @@ fn rooms_view() -> impl IntoView {
             let r_id = r.id.clone();
             r.style(move |s| 
                 s.apply_if(
-                    state3.active_room
-                        .get()
-                        .is_some_and(|a|a.id == r_id.id),
-                        |s| s.background(Color::LIGHT_GRAY).border(2).border_color(Color::DARK_BLUE)
+                    state3.active_room.get().is_some_and(|a|a.id == r_id.id), |s| s
+                        .background(Color::LIGHT_GRAY)
+                        .border(2)
+                        .border_color(Color::DARK_BLUE)
                 )
             )
         }).debug_name("rooms list")
@@ -389,14 +389,22 @@ fn msgs_view() -> impl IntoView {
         if let Some(room) = msgs_trigger.get() {
             state.data.with_untracked(|rooms| {
                 if let Some(msgs) = rooms.get(&room.id) {
+                    // let cloned = msgs.clone().into_inner();
+                    // for each in msgs.borrow().iter() {
+                    //     println!("{}", each.1.msg.text.current)
+                    // }
+                    // let t = cloned.values().collect::<Vec<_>>();
+                    let room_chunks = RoomMsgChunks::new(msgs.clone().into_inner());
                     // debug!("{:#?}", room_cx);
-                    msgs.clone()
+                    room_chunks
                 } else {
-                    RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
+                    // RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
+                    RoomMsgChunks::default()
                 }
             })
         } else {
-            RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
+            // RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
+            RoomMsgChunks::default()
         }
     };
     
@@ -412,19 +420,22 @@ fn msgs_view() -> impl IntoView {
     stack((
         dyn_stack(
             move || {
-                let msgs = room_msgs();
-                let range = state2.active_room_msgs_data.get();
-                let splitted_msgs = if range.total > 20 {
-                    let r = msgs.into_inner();
-                    r.range((Bound::Included(range.from), Bound::Included(range.to)))
-                    .map(|(k, v)| (k.clone(), v.clone())).collect() // FIXME: ugly...
-                } else {
-                    msgs.into_inner()
-                };
-                splitted_msgs.into_iter().rev()
+                let mut msgs = room_msgs();
+                let next_chunk = msgs.load_next_chunk();
+                next_chunk.msgs.clone().into_iter().enumerate()
+                // let range = state2.active_room_msgs_data.get();
+                // let splitted_msgs = if range.total > 20 {
+                //     let r = msgs.into_inner();
+                //     r.range((Bound::Included(range.from), Bound::Included(range.to)))
+                //     .map(|(k, v)| (k.clone(), v.clone())).collect() // FIXME: ugly...
+                // } else {
+                //     msgs.into_inner()
+                // };
+                // splitted_msgs.into_iter().rev()
+                // msgs.into_inner().into_iter().rev()
             },
-            |(id, _msg)| id.clone(),
-            |(_id, msg)| {
+            |(idx, _)| *idx,
+            |(_, msg)| {
                 trace!("dyn_stack: msg (view_fn)");
                 let id = msg.id.id.0;
                 // let _is_owner = msg.room_owner;

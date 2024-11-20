@@ -367,6 +367,7 @@ version = "0.0.0"
 dependencies = [
  "chrono-lite",
  "floem",
+ "im-rc",
  "serde",
  "serde_json",
  "tracing-lite",
