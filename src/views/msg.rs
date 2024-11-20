@@ -84,32 +84,20 @@ impl IntoView for MsgCtx {
         let author = self.author.username.clone();
         (
             author.style(|s| s.color(Color::GRAY)),
-            text
-                .style(|s| s
-                    // .border(1.)
-                    // .text_overflow(TextOverflow::Wrap)
-                    // .border_color(Color::BLACK)
-                    // .flex_grow(1.)
-                    // .max_height_full()
-                ),
+            text,
             time.human_formatted().style(|s| s.color(Color::GRAY))
         )
             .v_stack()
             .debug_name("msg")
             .style(move |s| s
-                // .justify_between()
+                .justify_between()
                 .border(1.)
                 .border_color(Color::BLACK)
                 .border_radius(5.)
                 .padding(5.)
-                // .text_overflow(TextOverflow::Wrap)
-                // .max_height_full()
-                // .max_width_full()
-                .min_height(50.)
-                // .max_width_pct(80.)
-                // .flex_basis(70.)
-                // .flex_grow(0.)
-                // .flex_shrink(1.)
+                .min_height(40.)
+                // .min_width_pct(20.)
+                .max_width_pct(80.)
             )
             .into_any()
     }

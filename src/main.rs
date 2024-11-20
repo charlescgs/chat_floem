@@ -19,7 +19,8 @@ use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
 use floem::reactive::{batch, create_effect, create_updater, provide_context, use_context, Trigger};
 use floem::style::TextOverflow;
-use floem::taffy::{AlignItems, FlexDirection};
+use floem::taffy::prelude::{minmax, TaffyGridLine};
+use floem::taffy::{AlignContent, AlignItems, FlexDirection, GridPlacement, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
 use tracing_lite::{debug, info, trace};
 use ulid::Ulid;
 use util::{Id, Tb};
@@ -91,24 +92,79 @@ impl ChatState {
 
 // -----------------------
 fn main() {
-    // -- Main UI state
-    provide_context(Rc::new(ChatState::new()));
-    // -- Msg tracker
-    provide_context(RwSignal::new(None::<Id>));
-    // -- Msg load tracker
-    provide_context(RwSignal::new(None::<Id>));
-    // provide_context(Trigger::new());
-    launch_with_config(app_view)
+    provide_context(Rc::new(ChatState::new())); // Main UI state
+    provide_context(RwSignal::new(None::<Id>)); // Msg tracker
+    provide_context(RwSignal::new(None::<Id>)); // Msg load tracker
+    launch_with_config(app_view_grid)
 }
 
-fn app_view() -> impl IntoView {
-    stack((left_view(), right_view()))
-        .debug_name("main")
+
+fn app_view_grid() -> impl IntoView {
+    let send_msg = Trigger::new();
+    stack((
+        toolbar_view(),
+        rooms_view(),
+        msgs_view(),
+        text_editor_view(send_msg),
+        editor_toolbar_view(send_msg),
+    ))
+        .debug_name("grid container")
         .style(|s| s
+            .grid()
+            .grid_template_columns(vec![
+                TrackSizingFunction::Single(
+                    minmax(
+                        MinTrackSizingFunction::Fixed(LengthPercentage::Length(200.0)),
+                        MaxTrackSizingFunction::Fraction(0.)
+                    ),
+                ),
+                TrackSizingFunction::Single(
+                    minmax(
+                        MinTrackSizingFunction::Auto,
+                        MaxTrackSizingFunction::Auto
+                    ),
+                ),
+                TrackSizingFunction::Single(
+                    minmax(
+                        MinTrackSizingFunction::Fixed(LengthPercentage::Length(60.0)),
+                        MaxTrackSizingFunction::Fraction(0.)
+                    ),
+                )
+            ])
+            .grid_template_rows(Vec::from([
+                TrackSizingFunction::Single(
+                    minmax(
+                        MinTrackSizingFunction::Fixed(LengthPercentage::Length(40.0)),
+                        MaxTrackSizingFunction::Fraction(0.)
+                    )
+                ),
+                    TrackSizingFunction::Single(
+                        minmax(
+                            MinTrackSizingFunction::Auto,
+                            MaxTrackSizingFunction::Auto
+                    )
+                ),
+                    TrackSizingFunction::Single(
+                        minmax(
+                            MinTrackSizingFunction::Auto,
+                            MaxTrackSizingFunction::Auto
+                    )
+                ),
+                    TrackSizingFunction::Single(
+                        minmax(
+                            MinTrackSizingFunction::Fixed(LengthPercentage::Length(80.0)),
+                            MaxTrackSizingFunction::FitContent(LengthPercentage::Length(100.))
+                    )
+                )
+            ]))
+            .column_gap(5.)
+            .row_gap(5.)
             .size_full()
-            .max_size_full()
             .padding(5.)
-            .gap(5.)
+
+            .border(2.)
+            .border_color(Color::BLACK)
+            .border_radius(5.)
         )
 }
 
@@ -199,9 +255,7 @@ fn toolbar_view() -> impl IntoView {
                         for each in msgs_vec {
                             map.insert(each.msg.msg_id.id, each);
                         }
-                        // .is_none() {
                         trace!("Inserted MsgCtx to state.rooms {}", active)
-                        // }
                     });
                     // -- Notify all subscribers that this room got an update
                     msgs_tracker.set(Some(last.room));
@@ -245,15 +299,31 @@ fn toolbar_view() -> impl IntoView {
                 edit_list_signal.set(EditList::Msg);
             }))
     });
-    (
-        new_menu,
-        edit_menu,
-        "Settings".button().action(move || {}),
-        "About".button().action(move || {})
-    ).h_stack()
-    .debug_name("toolbar")
+    
+    stack((
+        h_stack((
+            new_menu,
+            edit_menu,
+            "Settings".button().action(move || {}),
+            "About".button().action(move || {})
+        )).style(|s| s
+            .justify_content(AlignContent::Start)
+            .padding(5.)
+            .row_gap(5.)
+        ),
+    )).debug_name("menu toolbar")
     .style(|s| s
-        .justify_between()
+        .background(Color::MEDIUM_ORCHID)
+        .border_color(Color::BLACK)
+        .border(1.)
+        .grid_column(Line {
+            start: GridPlacement::from_line_index(1),
+            end: GridPlacement::Span(3)
+        })
+        .grid_row(Line {
+            start: GridPlacement::from_line_index(1),
+            end: GridPlacement::Span(1)
+        })
     )
 }
 
@@ -262,83 +332,48 @@ fn toolbar_view() -> impl IntoView {
 fn rooms_view() -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
     let state2 = state.clone();
-    dyn_stack(move || state.rooms.get(), |(s, _)| s.clone(), move |(s, r)| {
-        let state3 = state2.clone();
-        let r_id = r.id.clone();
-        r.style(move |s| 
-            s.apply_if(
-                state3.active_room
-                    .get()
-                    .is_some_and(|a|a.id == r_id.id),
-                    |s| s.background(Color::LIGHT_GRAY).border(2).border_color(Color::DARK_BLUE)
+    stack((
+        dyn_stack(move || state.rooms.get(), |(s, _)| s.clone(), move |(s, r)| {
+            let state3 = state2.clone();
+            let r_id = r.id.clone();
+            r.style(move |s| 
+                s.apply_if(
+                    state3.active_room
+                        .get()
+                        .is_some_and(|a|a.id == r_id.id),
+                        |s| s.background(Color::LIGHT_GRAY).border(2).border_color(Color::DARK_BLUE)
+                )
             )
-        )
-    }).debug_name("rooms list")
-    .style(|s| s
-        .flex_col()
-        .width_full()
-        .column_gap(5.)
-    )
-    .scroll()
-    .debug_name("rooms scroll")
-    .style(|s| s
-        .size_full()
-        .padding(5.)
-        .padding_right(7.)
-    )
-    .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
-}
-
-fn left_view() -> impl IntoView {
-    (
-        toolbar_view()
-            .debug_name("toolbar")
-            .style(|s| s
-                .align_items(AlignItems::Center)
-                .justify_between()
-                .border_bottom(0.5)
-                .border_color(Color::BLACK)
-                .padding(5.)
-                .size_full()
-                .flex_basis(35.)
-                .flex_grow(0.)
-                .flex_shrink(0.)
-            ),
-        rooms_view()
-    )
-        .v_stack()
-        .debug_name("left")
+        }).debug_name("rooms list")
         .style(|s| s
-            .border(2.)
-            .border_color(Color::BLACK)
-            .border_radius(5.)
-            .flex_grow(0.)
-            .flex_shrink(0.)
-            .flex_basis(200.)
-        ).clip()
-        // .style(|s| s.size_full().max_size_full())
-}
-
-fn right_view() -> impl IntoView {
-    (msgs_view(), chat_editor_view())
-        .v_stack()
-        .style(|s| s.size_full())
-        .clip()
-        .debug_name("right")
-        .style(|s| s
-            .flex_direction(FlexDirection::Column)
-            .border(2.)
-            .border_color(Color::NAVY)
-            .border_radius(5.)
-            .flex_grow(1.)
-            .flex_shrink(1.)
-            .flex_basis(500.)
+            .flex_col()
+            .width_full()
+            // .max_width_full()
+            .column_gap(5.)
         )
-        // .clip().style(|s| s
-            // .size_full().max_size_full()
-        // )
+        .scroll()
+        .debug_name("rooms scroll")
+        .style(|s| s
+            .size_full()
+            .padding(5.)
+            .padding_right(7.)
+        )
+        .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit()),
+    )).debug_name("rooms stack")
+    .style(|s| s
+        .background(Color::LIGHT_BLUE)
+        .border_color(Color::BLACK)
+        .border(1.)
+        .grid_column(Line {
+            start: GridPlacement::from_line_index(1),
+            end: GridPlacement::Span(1)
+        })
+        .grid_row(Line {
+            start: GridPlacement::from_line_index(2),
+            end: GridPlacement::Span(3)
+        })
+    )
 }
-
 
 // MARK: msgs
 
@@ -352,20 +387,15 @@ fn msgs_view() -> impl IntoView {
     let room_msgs = move || {
         debug!("->> derived_signal: msgs_view");
         if let Some(room) = msgs_trigger.get() {
-            // trace!("1");
             state.data.with_untracked(|rooms| {
-                // trace!("2");
                 if let Some(msgs) = rooms.get(&room.id) {
-                    // trace!("3");
                     // debug!("{:#?}", room_cx);
                     msgs.clone()
                 } else {
-                    // trace!("4");
                     RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
                 }
             })
         } else {
-            // trace!("5");
             RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
         }
     };
@@ -379,75 +409,89 @@ fn msgs_view() -> impl IntoView {
         // if state.active_room_msgs_data.
     });
 
-    dyn_stack(
-        move || {
-            let msgs = room_msgs();
-            let range = state2.active_room_msgs_data.get();
-            if range.total > 20 {
-                let r = msgs.into_inner();
-                r.range((Bound::Included(range.from), Bound::Included(range.to)))
-                .map(|(k, v)| (k.clone(), v.clone())).collect() // FIXME: ugly...
-            } else {
-                msgs.into_inner()
-            }
-        },
-        |(id, _msg)| id.clone(),
-        |(_id, msg)| {
-            trace!("dyn_stack: msg");
-            let id = msg.id.id.0;
-            // let _is_owner = msg.room_owner;
-            msg
-                .style(move |s| s
-                    // .max_width_pct(80.)
-                    // .text_overflow(TextOverflow::Wrap)
-                    .apply_if(id % 2 == 0, // for now
-                    // is_owner,
-                    |s| s.align_self(AlignItems::End)
+    stack((
+        dyn_stack(
+            move || {
+                let msgs = room_msgs();
+                let range = state2.active_room_msgs_data.get();
+                let splitted_msgs = if range.total > 20 {
+                    let r = msgs.into_inner();
+                    r.range((Bound::Included(range.from), Bound::Included(range.to)))
+                    .map(|(k, v)| (k.clone(), v.clone())).collect() // FIXME: ugly...
+                } else {
+                    msgs.into_inner()
+                };
+                splitted_msgs.into_iter().rev()
+            },
+            |(id, _msg)| id.clone(),
+            |(_id, msg)| {
+                trace!("dyn_stack: msg (view_fn)");
+                let id = msg.id.id.0;
+                // let _is_owner = msg.room_owner;
+                msg
+                    .style(move |s| s.apply_if(id % 2 == 0, // for now
+                        // is_owner,
+                        |s| s.align_self(AlignItems::End)
+                        )
                     )
-                )
+                }
+        ).debug_name("msgs list")
+        .style(|s| s
+            .flex_direction(FlexDirection::ColumnReverse)
+            .width_full()
+            .align_items(AlignItems::Start)
+            .column_gap(5.)
+        )
+        .scroll()
+        .debug_name("msgs scroll")
+        .style(|s| s
+            .size_full()
+            .padding(5.)
+            .padding_right(7.)
+        )
+        .scroll_style(|s| s
+            .handle_thickness(6.)
+            .shrink_to_fit()
+        )
+        .scroll_to_percent(move || {
+            trace!("scroll_to_percent");
+            msgs_trigger.track();
+            100.0
+        })
+        .on_resize(move |rect| {
+            // trace!("on_resize: {rect}");
+            scroll_pos.set(rect);
+        })
+        .on_scroll(move |rect| {
+            // trace!("on_scroll: {} + 30", rect.y0);
+            if rect.y0 == 0.0 {
+                debug!("on_scroll: load_more notified!");
+                load_more.notify();
             }
-    ).debug_name("msgs list")
+        }),
+    )).debug_name("msgs stack")
     .style(|s| s
-        .flex_direction(FlexDirection::ColumnReverse)
-        .width_full()
-        .max_width_full()
-        .min_height_full()
-        .align_items(AlignItems::Start)
-        .column_gap(5.)
-        
+        .padding(10.)
+        .background(Color::LIGHT_GREEN)
+        .border_color(Color::BLACK)
+        .border(1.)
+        .grid_column(Line {
+            start: GridPlacement::from_line_index(2),
+            end: GridPlacement::Span(2)
+        })
+        .grid_row(Line {
+            start: GridPlacement::from_line_index(2),
+            end: GridPlacement::Span(2)
+        })
     )
-    .scroll()
-    .debug_name("msgs scroll")
-    .scroll_to_percent(move || {
-        trace!("scroll_to_percent");
-        msgs_trigger.track();
-        100.0
-    })
-    .on_resize(move |rect| {
-        // trace!("on_resize: {rect}");
-        scroll_pos.set(rect);
-    })
-    .on_scroll(move |rect| {
-        // trace!("on_scroll: {} + 30", rect.y0);
-        if rect.y0 == 0.0 {
-            debug!("on_scroll: load_more notified!");
-            load_more.notify();
-        }
-    })
-    .style(|s| s
-        .max_size_full()
-        .padding(5.)
-        .padding_right(7.)
-    )
-    .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
 }
 
-// MARK: editor
+// MARK: text_editor
 
-fn chat_editor_view() -> impl IntoView {
+fn text_editor_view(send_msg: Trigger) -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
     let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
-    let send_msg = Trigger::new();
+    // let send_msg = Trigger::new();
     let editor_focus = RwSignal::new(false);
 
     let editor = text_editor("New message")
@@ -530,7 +574,7 @@ fn chat_editor_view() -> impl IntoView {
         }
     });
     
-    h_stack((
+    stack((
         container(editor)
         .style(|s| s
             .flex_grow(1.)
@@ -542,29 +586,47 @@ fn chat_editor_view() -> impl IntoView {
             .border_radius(5.)
             .padding(5.)
         ),
+    )).debug_name("text editor")
+    .style(|s| s
+        // .padding(5.)
+        .background(Color::YELLOW)
+        .border_color(Color::BLACK)
+        .border(1.)
+        .grid_column(Line {
+            start: GridPlacement::from_line_index(2),
+            end: GridPlacement::Span(1)
+        })
+        .grid_row(Line {
+            start: GridPlacement::from_line_index(4),
+            end: GridPlacement::Span(1)
+        })
+    )
+}
+
+// MARK: ed_toolbar
+
+pub fn editor_toolbar_view(send_msg: Trigger) -> impl IntoView {
+    stack((
         v_stack((
             button("Send").action(move || {
                 send_msg.notify();
             }).clear_focus(move || send_msg.track()),
-            button("Attach"),
-        )).debug_name("editor buttons")
-        .style(|s| s
-            .flex_grow(0.)
-            .flex_shrink(0.)
-            .flex_basis(50.)
-            .border(0.5)
-            .border_color(Color::NAVY)
-            .border_radius(5.)
-            .padding(2.)
-            .column_gap(2.)
-        ),
-    )).debug_name("text editor")
+            button("Attach")
+        )).style(|s| s.gap(5.)),
+    )).debug_name("editor buttons")
     .style(|s| s
-        .flex_basis(100.)
-        .flex_grow(0.)
-        .flex_shrink(0.)
+        .justify_center()
+        .padding(5.)
+        .background(Color::RED)
+        .border_color(Color::BLACK)
         .border(1.)
-        .border_color(Color::DARK_GREEN)
-        .border_radius(5.)
+        .grid_column(Line {
+            start: GridPlacement::from_line_index(3),
+            end: GridPlacement::Span(1)
+        })
+        .grid_row(Line {
+            start: GridPlacement::from_line_index(4),
+            end: GridPlacement::Span(1)
+        })
     )
 }
