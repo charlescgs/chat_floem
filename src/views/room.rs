@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, rc::Rc};
+use std::{collections::HashMap, fmt::Display, rc::Rc, sync::atomic::{AtomicU8, AtomicUsize}};
 
 use floem::{prelude::*, reactive::{create_effect, use_context, Trigger}, AnyView, IntoView};
 use tracing_lite::trace;
@@ -7,6 +7,7 @@ use ulid::Ulid;
 use crate::{cont::acc::Account, util::{Id, Tb}, ChatState, MsgView};
 use super::msg::MsgCtx;
 
+pub(crate) static ROOM_IDX: AtomicUsize = AtomicUsize::new(0);
 
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -71,6 +72,7 @@ impl IntoView for RoomCtx {
         let state = use_context::<Rc<ChatState>>().unwrap();
         // let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
         let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
+        let new_msg_scroll_end = use_context::<Trigger>().unwrap();
         let selected = Trigger::new();
         let need_update = Trigger::new();
 
@@ -205,7 +207,12 @@ impl IntoView for RoomCtx {
                 trace!("into_view for RoomCtx: need_upt is `true`");
                 state3.active_room.set(Some(room.id.clone()));
                 msg_view.set(MsgView::NewMsg(room.id.clone()));
+                new_msg_scroll_end.notify();
             }
+            // else {
+            //     trace!("into_view for RoomCtx: need_upt is `false`");
+            //     // state3.
+            // }
         });
 
         let top_view = (av, author)

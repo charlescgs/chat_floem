@@ -2,8 +2,8 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
-use std::ops::Bound;
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -17,15 +17,16 @@ use editor::text::{default_light_theme, SimpleStyling};
 use floem::kurbo::Rect;
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
-use floem::reactive::{batch, create_effect, create_memo, create_stateful_updater, create_updater, provide_context, use_context, DerivedRwSignal, SignalRead, Trigger};
+use floem::reactive::{batch, create_effect, provide_context, use_context, Trigger};
 use floem::taffy::prelude::{minmax, TaffyGridLine};
 use floem::taffy::{AlignContent, AlignItems, FlexDirection, GridPlacement, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
-use im_rc::{vector, Vector};
-use tracing_lite::{debug, error, info, trace};
+use im_rc::vector;
+use tracing_lite::{debug, info, trace, Level, Subscriber};
 use ulid::Ulid;
 use util::{Id, Tb};
 use views::msg::{MsgCtx, RoomMsgChunks};
-use views::room::RoomCtx;
+use views::msg_view::main_msg_view;
+use views::room::{RoomCtx, ROOM_IDX};
 
 pub mod element;
 pub mod config;
@@ -37,6 +38,7 @@ pub mod cont {
 pub mod util;
 pub mod views {
     pub mod msg;
+    pub mod msg_view;
     pub mod room;
 }
 
@@ -56,18 +58,19 @@ pub struct ChatState {
     pub rooms: RwSignal<BTreeMap<Ulid, RoomCtx>>,
     /// An active room (if any).
     pub active_room: RwSignal<Option<Id>>,
-    /// Stores info what range of its msgs is loaded.
-    pub active_room_msgs_data: RwSignal<RoomMsgChunks>,
+    // / Stores info what range of its msgs is loaded.
+    // pub active_room_msgs_data: RwSignal<RoomMsgChunks>,
     /// Map with:
     /// K: [Ulid] of a room
     /// V: Ordered map of [MsgCtx] with its Id.
     pub data: RwSignal<HashMap<Ulid, RefCell<BTreeMap<Ulid, MsgCtx>>>>,
-    
     /// List of all tabs with chunked msgs.
     pub rooms_msgs: RwSignal<BTreeMap<Ulid, Rc<RefCell<RoomMsgChunks>>>>,
-    /// An active room (if any).
+    
+    // An active room (if any).
+    // pub tab_active_room: RwSignal<Option<(Id, usize)>>,
     /// 0 - no active tab (should be with `None` only).
-    pub tab_active_room: RwSignal<(usize, Option<Id>)>,
+    pub rooms_tabs: RwSignal<HashMap<Ulid, usize>>
 }
 
 impl ChatState {
@@ -77,10 +80,19 @@ impl ChatState {
             rooms: RwSignal::new(BTreeMap::new()),
             active_room: RwSignal::new(None),
             data: RwSignal::new(HashMap::new()),
-            active_room_msgs_data: RwSignal::new(RoomMsgChunks::default()),
+            // active_room_msgs_data: RwSignal::new(RoomMsgChunks::default()),
             rooms_msgs: RwSignal::new(BTreeMap::new()),
-            tab_active_room: RwSignal::new((0, None))
+            rooms_tabs: RwSignal::new(HashMap::new())
         }
+    }
+
+    /// Obtain room index for the tab to use.
+    /// 
+    /// Index 0 equals `No active Tabs`.
+    pub fn get_room_idx(&self, room_id: &Ulid) -> usize {
+        let idx = *self.rooms_tabs.get_untracked().get(&room_id).unwrap_or(&0);
+        trace!("fn: get_room_idx for {room_id} returned {idx}");
+        idx
     }
 }
 
@@ -88,6 +100,7 @@ impl ChatState {
 
 // -----------------------
 fn main() {
+    Subscriber::new_with_max_level(Level::DEBUG).with_short_time_format();
     provide_context(Rc::new(ChatState::new())); // Main UI state
     provide_context(RwSignal::new(None::<Id>)); // Msg tracker
     provide_context(RwSignal::new(MsgView::None)); // Msg load tracker
@@ -97,11 +110,14 @@ fn main() {
 
 fn app_view_grid() -> impl IntoView {
     let send_msg = Trigger::new();
+    let new_msg_scroll_end = Trigger::new();
+    provide_context(new_msg_scroll_end);
     stack((
         toolbar_view(),
         rooms_view(),
-        msgs_view(),
-        text_editor_view(send_msg),
+        // msgs_view(),
+        tab_msgs_view(new_msg_scroll_end),
+        text_editor_view(send_msg, new_msg_scroll_end),
         editor_toolbar_view(send_msg),
     ))
         .debug_name("grid container")
@@ -221,6 +237,10 @@ fn toolbar_view() -> impl IntoView {
                         let mut def_chunks = RoomMsgChunks::default();
                         def_chunks.room_id = room.id.clone();
                         chunks.insert(room.id.id.clone(), Rc::new(RefCell::new(def_chunks)));
+                    });
+                    state.rooms_tabs.update(|tabs| {
+                        let new_idx = ROOM_IDX.fetch_add(1, Ordering::Relaxed);
+                        tabs.insert(room.id.id, new_idx);
                     });
                 });
                 trace!("Created and inserted test RoomCtx")
@@ -499,11 +519,9 @@ fn msgs_view() -> impl IntoView {
             100.0
         })
         .on_resize(move |rect| {
-            // trace!("on_resize: {rect}");
             scroll_pos.set(rect);
         })
         .on_scroll(move |rect| {
-            // trace!("on_scroll: {} + 30", rect.y0);
             if rect.y0 == 0.0 {
                 debug!("on_scroll: load_more notified!");
                 msg_view.set(MsgView::LoadMore(rect));
@@ -529,72 +547,48 @@ fn msgs_view() -> impl IntoView {
 
 // MARK: tab_msgs
 
-fn tab_msgs_view() -> impl IntoView {
+fn tab_msgs_view(new_msg_scroll_end: Trigger) -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
     let state2 = state.clone();
-    let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
+    let state3 = state.clone();
+    // let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
+    let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
     let scroll_pos = RwSignal::new(Rect::default());
-    let load_more = Trigger::new();
-
-    let active_room = state.tab_active_room.clone();
-    // -- If active room exist 
-    // if active_room.with_untracked(|(x, y)| y.is_none()) {
-
-    // }
     
-    let msgs = state.active_room_msgs_data.clone();
+    let act_room = state.active_room;
+    let rooms = state.rooms_msgs;
 
-    let room_msgs = move || {
-        debug!("->> derived_signal: msgs_view");
-        if let Some(room) = msgs_tracker.get() {
-            state.data.with_untracked(|rooms| {
-                if let Some(msgs) = rooms.get(&room.id) {
-                    // let cloned = msgs.clone().into_inner();
-                    // for each in msgs.borrow().iter() {
-                    //     println!("{}", each.1.msg.text.current)
-                    // }
-                    // let t = cloned.values().collect::<Vec<_>>();
-                    let room_chunks = RoomMsgChunks::new(msgs.clone().into_inner(), room);
-                    // debug!("{:#?}", room_cx);
-                    room_chunks
-                } else {
-                    // RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
-                    RoomMsgChunks::default()
-                }
-            })
-        } else {
-            // RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
-            RoomMsgChunks::default()
-        }
-    };
     
-    create_effect(move |_| {
-        debug!("->> effect: load_more");
-        load_more.track();
+    // create_effect(move |_| {
+    //     debug!("->> effect: load_more");
+        // load_more.track();
         // TODO:
         // 1. Check if there is more msgs to load.
         // 2. Load another chunk.
         // if state.active_room_msgs_data.
-    });
+    // });
 
     stack((
-        empty()
-        // tab(
-        //     move || active_room.get().0,
-        //     move || msgs.get(),
-        //     |((x, _), _)| x,
-        //     {
-        //         trace!("dyn_stack: msg (view_fn)");
-        //         // let id = msg.id.id.0;
-        //         // let _is_owner = msg.room_owner;
-        //         // msg
-        //             .style(move |s| s.apply_if(id % 2 == 0, // for now
-        //                 // is_owner,
-        //                 |s| s.align_self(AlignItems::End)
-        //                 )
-        //             )
-        //         }
-        // ).debug_name("msgs list")
+        tab(
+            move || {
+                match act_room.get() {
+                    Some(id) => state2.get_room_idx(&id.id),
+                    None => 0
+                }
+            },
+            move || rooms.get(),
+            move |(x,_)| {
+                let idx = state3.get_room_idx(x);
+                trace!("key_fn: {idx}");
+                idx
+            }
+            ,
+            |(_, v)| {
+                info!("dyn_stack: msg (view_fn) for: {}", v.borrow().room_id);
+                main_msg_view(v)
+                // empty()
+            }
+        ).debug_name("msgs view")
         .style(|s| s
             .flex_direction(FlexDirection::ColumnReverse)
             .width_full()
@@ -614,18 +608,16 @@ fn tab_msgs_view() -> impl IntoView {
         )
         .scroll_to_percent(move || {
             trace!("scroll_to_percent");
-            msgs_tracker.track();
+            new_msg_scroll_end.track();
             100.0
         })
         .on_resize(move |rect| {
-            // trace!("on_resize: {rect}");
             scroll_pos.set(rect);
         })
         .on_scroll(move |rect| {
-            // trace!("on_scroll: {} + 30", rect.y0);
             if rect.y0 == 0.0 {
                 debug!("on_scroll: load_more notified!");
-                load_more.notify();
+                msg_view.set(MsgView::LoadMore(rect));
             }
         }),
     )).debug_name("msgs stack")
@@ -647,9 +639,9 @@ fn tab_msgs_view() -> impl IntoView {
 
 // MARK: text_editor
 
-fn text_editor_view(send_msg: Trigger) -> impl IntoView {
+fn text_editor_view(send_msg: Trigger, new_msg_scroll_end: Trigger) -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
-    let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
+    // let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
     let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
     let editor_focus = RwSignal::new(false);
 
@@ -735,6 +727,7 @@ fn text_editor_view(send_msg: Trigger) -> impl IntoView {
             
             // msgs_tracker.set(Some(active_room));
             msg_view.set(MsgView::NewMsg(active_room));
+            new_msg_scroll_end.notify();
             
             doc_signal.update(|d| {
                 let t = d.text();
