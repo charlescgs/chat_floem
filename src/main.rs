@@ -17,10 +17,11 @@ use editor::text::{default_light_theme, SimpleStyling};
 use floem::kurbo::Rect;
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
-use floem::reactive::{batch, create_effect, provide_context, use_context, Trigger};
+use floem::reactive::{batch, create_effect, create_memo, create_stateful_updater, create_updater, provide_context, use_context, DerivedRwSignal, SignalRead, Trigger};
 use floem::taffy::prelude::{minmax, TaffyGridLine};
 use floem::taffy::{AlignContent, AlignItems, FlexDirection, GridPlacement, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
-use tracing_lite::{debug, info, trace};
+use im_rc::{vector, Vector};
+use tracing_lite::{debug, error, info, trace};
 use ulid::Ulid;
 use util::{Id, Tb};
 use views::msg::{MsgCtx, RoomMsgChunks};
@@ -46,18 +47,6 @@ pub const BUTTON_HOVER: Color = Color::rgb8(250, 250, 0);
 pub const BUTTON_ACTIVE: Color = Color::rgb8(250, 0, 0);
 
 
-/// Struct holding info regarding msgs loaded.
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RangeInView {
-    /// Total room msgs.
-    pub total: u16,
-    /// Start range.
-    pub from: Ulid,
-    /// End range.
-    pub to: Ulid
-}
-
-
 
 #[derive(Debug)]
 pub struct ChatState {
@@ -68,11 +57,17 @@ pub struct ChatState {
     /// An active room (if any).
     pub active_room: RwSignal<Option<Id>>,
     /// Stores info what range of its msgs is loaded.
-    pub active_room_msgs_data: RwSignal<RangeInView>,
+    pub active_room_msgs_data: RwSignal<RoomMsgChunks>,
     /// Map with:
     /// K: [Ulid] of a room
     /// V: Ordered map of [MsgCtx] with its Id.
     pub data: RwSignal<HashMap<Ulid, RefCell<BTreeMap<Ulid, MsgCtx>>>>,
+    
+    /// List of all tabs with chunked msgs.
+    pub rooms_msgs: RwSignal<BTreeMap<Ulid, Rc<RefCell<RoomMsgChunks>>>>,
+    /// An active room (if any).
+    /// 0 - no active tab (should be with `None` only).
+    pub tab_active_room: RwSignal<(usize, Option<Id>)>,
 }
 
 impl ChatState {
@@ -82,7 +77,9 @@ impl ChatState {
             rooms: RwSignal::new(BTreeMap::new()),
             active_room: RwSignal::new(None),
             data: RwSignal::new(HashMap::new()),
-            active_room_msgs_data: RwSignal::new(RangeInView::default())
+            active_room_msgs_data: RwSignal::new(RoomMsgChunks::default()),
+            rooms_msgs: RwSignal::new(BTreeMap::new()),
+            tab_active_room: RwSignal::new((0, None))
         }
     }
 }
@@ -93,7 +90,7 @@ impl ChatState {
 fn main() {
     provide_context(Rc::new(ChatState::new())); // Main UI state
     provide_context(RwSignal::new(None::<Id>)); // Msg tracker
-    provide_context(RwSignal::new(None::<Id>)); // Msg load tracker
+    provide_context(RwSignal::new(MsgView::None)); // Msg load tracker
     launch_with_config(app_view_grid)
 }
 
@@ -203,6 +200,7 @@ fn toolbar_view() -> impl IntoView {
     let new_list_signal = RwSignal::new(NewList::None);
     // -- Id is a room, that got an update
     let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
+    let msgs_view = use_context::<RwSignal<MsgView>>().unwrap();
 
     // -- Action to create test room on click
     create_effect(move |_| {
@@ -219,6 +217,11 @@ fn toolbar_view() -> impl IntoView {
                     state.accounts.update(|accs| { accs.insert(room.owner.acc_id.id.clone(), room.owner.clone());} );
                     state.rooms.update(|rooms| { rooms.insert(room.id.id.clone(), room.clone());} );
                     state.data.update(|data| { data.insert(room.id.id.clone(), RefCell::new(BTreeMap::new())); });
+                    state.rooms_msgs.update(|chunks| {
+                        let mut def_chunks = RoomMsgChunks::default();
+                        def_chunks.room_id = room.id.clone();
+                        chunks.insert(room.id.id.clone(), Rc::new(RefCell::new(def_chunks)));
+                    });
                 });
                 trace!("Created and inserted test RoomCtx")
                 
@@ -240,25 +243,34 @@ fn toolbar_view() -> impl IntoView {
                     // -- Create Msgs
                     let mut msgs_vec = Vec::with_capacity(40);
                     for _ in 0..40 {
-                        sleep(Duration::from_millis(1));
+                        sleep(Duration::from_millis(2));
                         let msg = MsgCtx::new_from_click(&active, &acc);
                         msgs_vec.push(msg);
                     }
                     trace!("Created New MsgCtx");
-                    // -- Save it
-                    let last = msgs_vec.last().unwrap().clone();
+                    // -- Save it on data
+                    let last = msgs_vec.last().unwrap().room.clone();
                     state.data.with_untracked(|rooms| {
-                        // if rooms
                         let mut map = rooms.get(&active.id)
                             .unwrap()
                             .borrow_mut();
-                        for each in msgs_vec {
+                        for each in msgs_vec.clone() {
                             map.insert(each.id.id, each);
                         }
                         trace!("Inserted MsgCtx to state.rooms {}", active)
                     });
+                    // -- Save it as chunks
+                    state.rooms_msgs.update(|rooms| {
+                        if let Some(room) = rooms.get_mut(&active.id) {
+                            for each in msgs_vec {
+                                room.borrow_mut().append_new_msg(each);
+                            }
+                            trace!("Inserted msgs to state.room_msgs {}", active)
+                        }
+                    });
                     // -- Notify all subscribers that this room got an update
-                    msgs_tracker.set(Some(last.room));
+                    // msgs_tracker.set(Some(last.clone()));
+                    msgs_view.set(MsgView::NewMsg(last));
                 }
             },
             NewList::Account => {
@@ -266,7 +278,7 @@ fn toolbar_view() -> impl IntoView {
                 let state = use_context::<Rc<ChatState>>().unwrap();
                 if let Some(acc) = Account::new_from_click() {
                     state.accounts.update(|accs| { accs.insert(acc.acc_id.id.clone(), acc); });
-
+                    
                 }
             }
         }
@@ -377,62 +389,79 @@ fn rooms_view() -> impl IntoView {
 
 // MARK: msgs
 
+
+#[derive(Debug, Clone)]
+pub enum MsgView {
+    None,
+    NewMsg(Id),
+    LoadMore(Rect)
+}
+
+
 fn msgs_view() -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
     let state2 = state.clone();
-    let msgs_trigger = use_context::<RwSignal<Option<Id>>>().unwrap();
+    let state3 = state.clone();
+    let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
+    let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
     let scroll_pos = RwSignal::new(Rect::default());
     let load_more = Trigger::new();
 
     let room_msgs = move || {
-        debug!("->> derived_signal: msgs_view");
-        if let Some(room) = msgs_trigger.get() {
-            state.data.with_untracked(|rooms| {
-                if let Some(msgs) = rooms.get(&room.id) {
-                    // let cloned = msgs.clone().into_inner();
-                    // for each in msgs.borrow().iter() {
-                    //     println!("{}", each.1.msg.text.current)
-                    // }
-                    // let t = cloned.values().collect::<Vec<_>>();
-                    let room_chunks = RoomMsgChunks::new(msgs.clone().into_inner());
-                    // debug!("{:#?}", room_cx);
-                    room_chunks
-                } else {
-                    // RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
-                    RoomMsgChunks::default()
+        debug!("->> Compute room_msgs");
+        match msg_view.get() {
+            MsgView::None => vector!(),
+            MsgView::NewMsg(room) => {
+                let room_chunks = state.rooms_msgs.with_untracked(|rooms| {
+                    let chunks = if let Some(msgs) = rooms.get(&room.id) {
+                       msgs.clone() 
+                    } else {
+                        let mut room_chunks = Rc::new(RefCell::new(RoomMsgChunks::default()));
+                        room_chunks.borrow_mut().room_id = room.clone();
+                        state.rooms_msgs.update(|rooms| { rooms.insert(room.id, room_chunks.clone()); });
+                        room_chunks
+                    };
+                    chunks
+                });
+                let mut chunk_iter = vector!();
+                for each in room_chunks.borrow().reload() {
+                    chunk_iter.append(each.msgs.clone());
                 }
-            })
-        } else {
-            // RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
-            RoomMsgChunks::default()
+                chunk_iter
+            },
+            MsgView::LoadMore(rect) => {
+                let act_room = state.active_room.get_untracked();
+                match act_room {
+                    Some(room_id) => {
+                        let room_chunks = state.rooms_msgs.with_untracked(|rooms| {
+                            let chunks = if let Some(msgs) = rooms.get(&room_id.id) {
+                                msgs.clone()
+                            } else {
+                                let mut chunks =  Rc::new(RefCell::new(RoomMsgChunks::default()));
+                                chunks.borrow_mut().room_id = room_id.clone();
+                                state.rooms_msgs.update(|rooms| { rooms.insert(room_id.id, chunks.clone()); });
+                                chunks
+                            };
+                            chunks
+                        });
+                        let mut chunk_iter = vector!();
+                        for each in room_chunks.borrow_mut().load_next() {
+                            chunk_iter.append(each.msgs.clone());
+                        }
+                        chunk_iter
+                    },
+                    None => vector![]
+                }
+            }
         }
     };
-    
-    create_effect(move |_| {
-        debug!("->> effect: load_more");
-        load_more.track();
-        // TODO:
-        // 1. Check if there is more msgs to load.
-        // 2. Load another chunk.
-        // if state.active_room_msgs_data.
-    });
 
     stack((
         dyn_stack(
             move || {
-                let mut msgs = room_msgs();
-                let next_chunk = msgs.load_next_chunk();
-                next_chunk.msgs.clone().into_iter().enumerate()
-                // let range = state2.active_room_msgs_data.get();
-                // let splitted_msgs = if range.total > 20 {
-                //     let r = msgs.into_inner();
-                //     r.range((Bound::Included(range.from), Bound::Included(range.to)))
-                //     .map(|(k, v)| (k.clone(), v.clone())).collect() // FIXME: ugly...
-                // } else {
-                //     msgs.into_inner()
-                // };
-                // splitted_msgs.into_iter().rev()
-                // msgs.into_inner().into_iter().rev()
+                debug!("->> msg fn");
+                let chunks = room_msgs();
+                chunks.into_iter().rev().enumerate()
             },
             |(idx, _)| *idx,
             |(_, msg)| {
@@ -466,7 +495,126 @@ fn msgs_view() -> impl IntoView {
         )
         .scroll_to_percent(move || {
             trace!("scroll_to_percent");
-            msgs_trigger.track();
+            msgs_tracker.track();
+            100.0
+        })
+        .on_resize(move |rect| {
+            // trace!("on_resize: {rect}");
+            scroll_pos.set(rect);
+        })
+        .on_scroll(move |rect| {
+            // trace!("on_scroll: {} + 30", rect.y0);
+            if rect.y0 == 0.0 {
+                debug!("on_scroll: load_more notified!");
+                msg_view.set(MsgView::LoadMore(rect));
+                // load_more.notify();
+            }
+        }),
+    )).debug_name("msgs stack")
+    .style(|s| s
+        .padding(10.)
+        .background(Color::LIGHT_GREEN)
+        .border_color(Color::BLACK)
+        .border(1.)
+        .grid_column(Line {
+            start: GridPlacement::from_line_index(2),
+            end: GridPlacement::Span(2)
+        })
+        .grid_row(Line {
+            start: GridPlacement::from_line_index(2),
+            end: GridPlacement::Span(2)
+        })
+    )
+}
+
+// MARK: tab_msgs
+
+fn tab_msgs_view() -> impl IntoView {
+    let state = use_context::<Rc<ChatState>>().unwrap();
+    let state2 = state.clone();
+    let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
+    let scroll_pos = RwSignal::new(Rect::default());
+    let load_more = Trigger::new();
+
+    let active_room = state.tab_active_room.clone();
+    // -- If active room exist 
+    // if active_room.with_untracked(|(x, y)| y.is_none()) {
+
+    // }
+    
+    let msgs = state.active_room_msgs_data.clone();
+
+    let room_msgs = move || {
+        debug!("->> derived_signal: msgs_view");
+        if let Some(room) = msgs_tracker.get() {
+            state.data.with_untracked(|rooms| {
+                if let Some(msgs) = rooms.get(&room.id) {
+                    // let cloned = msgs.clone().into_inner();
+                    // for each in msgs.borrow().iter() {
+                    //     println!("{}", each.1.msg.text.current)
+                    // }
+                    // let t = cloned.values().collect::<Vec<_>>();
+                    let room_chunks = RoomMsgChunks::new(msgs.clone().into_inner(), room);
+                    // debug!("{:#?}", room_cx);
+                    room_chunks
+                } else {
+                    // RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
+                    RoomMsgChunks::default()
+                }
+            })
+        } else {
+            // RefCell::new(BTreeMap::<Ulid, MsgCtx>::new())
+            RoomMsgChunks::default()
+        }
+    };
+    
+    create_effect(move |_| {
+        debug!("->> effect: load_more");
+        load_more.track();
+        // TODO:
+        // 1. Check if there is more msgs to load.
+        // 2. Load another chunk.
+        // if state.active_room_msgs_data.
+    });
+
+    stack((
+        empty()
+        // tab(
+        //     move || active_room.get().0,
+        //     move || msgs.get(),
+        //     |((x, _), _)| x,
+        //     {
+        //         trace!("dyn_stack: msg (view_fn)");
+        //         // let id = msg.id.id.0;
+        //         // let _is_owner = msg.room_owner;
+        //         // msg
+        //             .style(move |s| s.apply_if(id % 2 == 0, // for now
+        //                 // is_owner,
+        //                 |s| s.align_self(AlignItems::End)
+        //                 )
+        //             )
+        //         }
+        // ).debug_name("msgs list")
+        .style(|s| s
+            .flex_direction(FlexDirection::ColumnReverse)
+            .width_full()
+            .align_items(AlignItems::Start)
+            .column_gap(5.)
+        )
+        .scroll()
+        .debug_name("msgs scroll")
+        .style(|s| s
+            .size_full()
+            .padding(5.)
+            .padding_right(7.)
+        )
+        .scroll_style(|s| s
+            .handle_thickness(6.)
+            .shrink_to_fit()
+        )
+        .scroll_to_percent(move || {
+            trace!("scroll_to_percent");
+            msgs_tracker.track();
             100.0
         })
         .on_resize(move |rect| {
@@ -501,8 +649,8 @@ fn msgs_view() -> impl IntoView {
 
 fn text_editor_view(send_msg: Trigger) -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
-    let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
-    // let send_msg = Trigger::new();
+    let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
+    let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
     let editor_focus = RwSignal::new(false);
 
     let editor = text_editor("New message")
@@ -531,6 +679,7 @@ fn text_editor_view(send_msg: Trigger) -> impl IntoView {
         if text.is_empty() { return };
         // -- Get active room
         if let Some(active_room) = state.active_room.get_untracked() {
+            info!(" for {active_room}");
             // -- Get message author (dummy for now)
             let (msg_author, owner) = {
                 let room = state.rooms.get_untracked();
@@ -567,12 +716,26 @@ fn text_editor_view(send_msg: Trigger) -> impl IntoView {
                 .get(&active_room.id)
                 .unwrap()
                 .borrow_mut()
-                .insert(new_msg.msg.msg_id.id, new_msg)
+                .insert(new_msg.msg.msg_id.id, new_msg.clone())
                 .is_none() {
-                    trace!("Inserted new MsgCtx to state.rooms")
+                    trace!("Inserted new MsgCtx to state.data")
                 }
             });
-            msgs_trackerv2.set(Some(active_room));
+            // -- Save it as chunk
+            state.rooms_msgs.update(|rooms| {
+                if let Some(room) = rooms.get(&active_room.id) {
+                    room.borrow_mut().append_new_msg(new_msg);
+                    trace!("Inserted new MsgCtx to state.rooms_msgs")
+                } else {
+                    if rooms.insert(active_room.id, Rc::new(RefCell::new(RoomMsgChunks::new_from_single_msg(new_msg)))).is_none() {
+                        trace!("Inserted new MsgCtx to state.rooms_msgs and created RoomMsgChunks")
+                    }
+                }
+            });
+            
+            // msgs_tracker.set(Some(active_room));
+            msg_view.set(MsgView::NewMsg(active_room));
+            
             doc_signal.update(|d| {
                 let t = d.text();
                 trace!("text len: {}", t.len());
@@ -580,7 +743,7 @@ fn text_editor_view(send_msg: Trigger) -> impl IntoView {
                 sel.add_region(SelRegion::new(0, t.len(), None));
                 d.edit_single(sel, "", EditType::Delete);
             });
-            editor_focus.set(true);
+            // editor_focus.set(true);
             // editor.editor().active.set(true);
         }
     });

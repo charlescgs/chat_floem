@@ -1,12 +1,11 @@
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::ops::Add;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 
 use chrono_lite::Datetime;
-use floem::style::TextOverflow;
-use floem::taffy::AlignItems;
 use floem::{prelude::*, AnyView};
 use im_rc::{vector, Vector};
 use tracing_lite::{debug, error, info, trace, warn};
@@ -14,7 +13,6 @@ use ulid::Ulid;
 
 use crate::cont::acc::Account;
 use crate::cont::msg::{Msg, Text};
-use crate::element;
 use crate::util::{Id, Tb};
 
 static COUNTER: AtomicU16 = AtomicU16::new(0);
@@ -136,11 +134,12 @@ pub struct ReaCtx {
 /// ```md
 /// |------------------| <- BTreeMap with Msgs
 /// |------| |----| |--| <- Chunks are created
-///    1       2     3   <- ..and stored in `RoomMsgChunks`
-/// 
+///    1       2     3   <- ..and stored in `RoomMsgChunks`  
+/// Then chunks are loaded into msg view fn as Single struct calling a method
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RoomMsgChunks {
+    pub room_id: Id,
     /// Total room msgs count.
     pub total_msgs: u16,
     /// Total room chunks count.
@@ -148,15 +147,27 @@ pub struct RoomMsgChunks {
     /// Msgs as chunks (Oldest in front).
     pub chunks: Vec<Rc<MsgChunk>>,
     /// Index of a last displayed [MsgChunk] in `chunks`.  
-    /// When loading more msg, index goes down.
-    pub last_chunk_on_display: u16
+    /// When loading more msg, index goes up.
+    pub last_chunk_on_display: Cell<u16>
     // pub from: Ulid,
     // pub to: Ulid
 }
 
 impl RoomMsgChunks {
+    pub fn new_from_single_msg(msg: MsgCtx) -> Self {
+        let mut chunk = MsgChunk::default();
+        let room_id = msg.room.clone();
+        chunk.add_msg(msg);
+        Self {
+            room_id,
+            total_msgs: 1,
+            chunks_count: 1,
+            chunks: vec!(Rc::new(chunk)),
+            last_chunk_on_display: Cell::new(0)
+        }
+    }
     /// Create new chunks from message map.
-    pub fn new(msgs: BTreeMap<Ulid, MsgCtx>) -> Self {
+    pub fn new(msgs: BTreeMap<Ulid, MsgCtx>, room_id: Id) -> Self {
         let total_msgs = msgs.len() as u16;
         info!("total msgs: {total_msgs}");
         let chunks = {
@@ -201,33 +212,118 @@ impl RoomMsgChunks {
             chunks.len() as u16
         };
         info!("chunks_count: {chunks_count}");
-        let last_chunk_on_display = if chunks_count == 0 { 0 } else {
-            chunks_count - 1
-        };
-        info!("last_chunk_on_display: {last_chunk_on_display}");
         Self {
+            room_id,
             total_msgs,
-            last_chunk_on_display,
+            last_chunk_on_display: Cell::new(chunks_count),
             chunks_count,
-            chunks
+            chunks,
         }
     }
 
-    pub fn load_next_chunk(&mut self) -> Rc<MsgChunk> {
+    /// Add single [Msg] to the chunk.
+    pub fn append_new_msg(&mut self, msg: MsgCtx) {
+        // Get the chunk with youngest msgs and check if full
+        match self.chunks.last_mut() {
+            Some(chunk) => {
+                if chunk.count >= 20 {
+                    // -- Create new chunk
+                    self.chunks.push(Rc::new(MsgChunk::new(Vector::unit(msg))));
+                    self.chunks_count += 1;
+                    self.total_msgs += 1;
+
+                    let mut display_idx = self.last_chunk_on_display.get();
+                    self.last_chunk_on_display.set(display_idx.saturating_add(1));
+                } else {
+                    // -- Push onto existing chunk
+                    if let Some(mut_chunk) = Rc::get_mut(chunk) {
+                        mut_chunk.add_msg(msg);
+                        self.total_msgs += 1;
+                    } else {
+                        error!("Rc::get_mut on Chunk returned None")
+                    }
+                }
+            },
+            None => {
+                self.chunks.push(Rc::new(MsgChunk::new(Vector::unit(msg))));
+                self.chunks_count += 1;
+                self.total_msgs += 1;
+                self.last_chunk_on_display.set(0)
+            },
+        }
+    }
+
+    /// Evaluate if any more not loaded chunks left in the room.
+    /// TODO: check it!
+    pub fn anymore_available(&self) -> bool {
+        self.chunks_count > self.last_chunk_on_display.get()
+    }
+
+    #[deprecated]
+    pub fn load_next_chunk(&self) -> Rc<MsgChunk> {
         debug!("load_next_chunk");
         // -- Check how many chunks is loaded and return if no more left
-        // if self.last_chunk_on_display == 0 {
-        //     trace!("nothing to load");
-        //     return Rc::new(MsgChunk::default())
-        // }
+        if self.chunks_count == 0 {
+            trace!("nothing to load");
+            return Rc::new(MsgChunk::default())
+        }
         // -- Load another one (if exist)
-        if let Some(next) = self.chunks.get(self.last_chunk_on_display as usize) {
+        if let Some(next) = self.chunks.get(self.last_chunk_on_display.get() as usize) {
+            let old = self.last_chunk_on_display.get();
+            self.last_chunk_on_display.set(old.saturating_sub(1));
             trace!("loading next..");
-            let n = next.clone();
-            self.last_chunk_on_display.saturating_sub(1);
-            return n
+            let chunk = next.clone();
+            return chunk
         }
         Rc::new(MsgChunk::default())
+    }
+    
+    /// Load room chunks in range until `last_chunk_on_display` + one.
+    pub fn load_next(&self) -> &[Rc<MsgChunk>] {
+        debug!("fn: load_next");
+        // -- Check how many chunks is loaded and return if no more left
+        if self.chunks_count == 0 {
+            trace!("nothing to load");
+            return [].as_slice()
+        }
+        // -- Load another one
+        trace!("self.last_chunk_on_display: {}", self.last_chunk_on_display.get());
+        let mut old = self.last_chunk_on_display.get();
+        let range = {
+            if old == self.chunks_count.saturating_sub(1) {
+                let range = &self.chunks[old as usize..];
+                self.last_chunk_on_display.set(old.saturating_sub(1));
+                range
+            } else {
+                self.last_chunk_on_display.set(old.saturating_sub(1));
+                let range = &self.chunks[old as usize..];
+                range
+            }
+        };
+        range
+    }
+    
+    /// Reload loaded chunks (as a result of new/changed message).
+    pub fn reload(&self) -> &[Rc<MsgChunk>] {
+        debug!("fn: reload");
+        // -- Check how many chunks is loaded and return if no more left
+        if self.chunks_count == 0 {
+            trace!("nothing to reload");
+            return [].as_slice()
+        }
+        // -- Change slice range to 1 if display was 0
+        let mut display_idx = self.last_chunk_on_display.get();
+        trace!("self.last_chunk_on_display: {display_idx}");
+
+        let reloaded = {
+            if display_idx == self.chunks_count.saturating_sub(1) {
+                &self.chunks[display_idx as usize..]
+            } else {
+                &self.chunks[(display_idx + 1) as usize..]
+            }
+        };
+        trace!("reloading..");
+        reloaded
     }
 }
 
@@ -240,10 +336,145 @@ pub struct MsgChunk {
 }
 
 impl MsgChunk {
+    // Construct new MsgChunk from the Vector<MsgCtx>.
     pub fn new(msgs: Vector<MsgCtx>) -> Self {
         Self {
             count: msgs.len() as u8,
             msgs
         }
+    }
+
+    /// Add single [MsgCtx] onto back of the [Vector].
+    pub fn add_msg(&mut self, msg: MsgCtx) {
+        self.msgs.push_back(msg);
+        self.count += 1
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+    use std::time::Duration;
+    use crate::cont::acc::Account;
+    use crate::util::{Id, Tb};
+    use super::{MsgCtx, RoomMsgChunks};
+
+    #[test]
+    fn basic_chunk_test() {
+        // 1. Create test msgs
+        let act_room = Id::new(Tb::Room);
+        let acc = Account {
+            acc_id: Id::new(Tb::Acc),
+            username: "Karol".into(),
+            av: Rc::new(vec![]),
+        };
+
+        let mut msgs_vec = Vec::with_capacity(80);
+        for _ in 0..80 {
+            std::thread::sleep(Duration::from_millis(2));
+            let msg = MsgCtx::new_from_click(&act_room, &acc);
+            msgs_vec.push(msg);
+        }
+        let len = msgs_vec.len();
+        // 2. Insert them into RoomMsgChunks
+        let mut room_chunks = RoomMsgChunks::default();
+        room_chunks.room_id = act_room.clone();
+        for each in msgs_vec {
+            room_chunks.append_new_msg(each);
+        }
+        // 3. Print it and assert.
+        println!("->> Before:");
+        println!("room_id: {}", room_chunks.room_id);
+        println!("anymore_available: {}", room_chunks.anymore_available());
+        println!("msgs_vec len: {len}");
+        println!("chunks_count: {}", room_chunks.chunks_count);
+        println!("last_chunk_on_display: {}", room_chunks.last_chunk_on_display.get());
+        println!("total_msgs: {}", room_chunks.total_msgs);
+
+        let reload = room_chunks.reload();
+        assert!(reload.iter().fold(0, |mut count, m| {count += m.count; count}) == 20);
+        assert!(reload.len() == 1);
+        // println!("->> reload:");
+        // println!("count: {}", );
+        // println!("msgs: {:#?}", reload
+        //     .iter()
+        //     .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>()
+        // );
+        let load_next = room_chunks.load_next();
+        assert!(load_next.iter().fold(0, |mut count, m| {count += m.count; count}) == 20);
+        assert!(load_next.len() == 1);
+        // println!("->> load_next:");
+        // println!("count: {}", );
+        // println!("msgs: {:#?}", load_next
+        //     .iter()
+        //     .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>()
+        // );
+        let reload1 = room_chunks.reload();
+        assert!(reload1.iter().fold(0, |mut count, m| {count += m.count; count}) == 20);
+        assert!(reload1.len() == 1);
+        // println!("->> reload1:");
+        // println!("count: {}", reload1.iter().fold(0, |mut count, m| {count += m.count; count}));
+        // println!("msgs: {:#?}", reload1
+        //     .iter()
+        //     .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>()
+        // );
+        let load_next1 = room_chunks.load_next();
+        assert!(load_next1.iter().fold(0, |mut count, m| {count += m.count; count}) == 40);
+        assert!(load_next1.len() == 2);
+        // println!("->> load_next1:");
+        // println!("count: {}", load_next1.iter().fold(0, |mut count, m| {count += m.count; count}));
+        // println!("msgs: {:#?}", load_next1
+        //     .iter()
+        //     .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>()
+        // );
+
+        let reload2 = room_chunks.reload();
+        assert!(reload2.iter().fold(0, |mut count, m| {count += m.count; count}) == 40);
+        assert!(reload2.len() == 2);
+        // println!("->> reload2:");
+        // println!("count: {}", reload2.iter().fold(0, |mut count, m| {count += m.count; count}));
+        // println!("msgs: {:#?}", reload2
+        //     .iter()
+        //     .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>()
+        // );
+
+        let load_next2 = room_chunks.load_next();
+        assert!(load_next2.iter().fold(0, |mut count, m| {count += m.count; count}) == 60);
+        assert!(load_next2.len() == 3);
+        // println!("->> load_next2:");
+        // println!("count: {}", load_next2.iter().fold(0, |mut count, m| {count += m.count; count}));
+        // println!("msgs: {:#?}", load_next2
+        //     .iter()
+        //     .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>()
+        // );
+
+        let reload3 = room_chunks.reload();
+        assert!(reload3.iter().fold(0, |mut count, m| {count += m.count; count}) == 60);
+        assert!(reload3.len() == 3);
+        // println!("->> reload3:");
+        // println!("count: {}", reload3.iter().fold(0, |mut count, m| {count += m.count; count}));
+        // println!("msgs: {:#?}", reload3
+        //     .iter()
+        //     .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>()
+        // );
+        
+        let load_next3 = room_chunks.load_next();
+        assert!(load_next3.iter().fold(0, |mut count, m| {count += m.count; count}) == 80);
+        assert!(load_next3.len() == 4);
+        // println!("->> load_next3:");
+        // println!("count: {}", load_next3.iter().fold(0, |mut count, m| {count += m.count; count}));
+        // println!("msgs: {:#?}", load_next3
+        //     .iter()
+        //     .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>()
+        // );  
     }
 }

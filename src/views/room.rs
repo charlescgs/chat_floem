@@ -4,7 +4,7 @@ use floem::{prelude::*, reactive::{create_effect, use_context, Trigger}, AnyView
 use tracing_lite::trace;
 use ulid::Ulid;
 
-use crate::{cont::acc::Account, util::{Id, Tb}, ChatState};
+use crate::{cont::acc::Account, util::{Id, Tb}, ChatState, MsgView};
 use super::msg::MsgCtx;
 
 
@@ -69,7 +69,8 @@ impl IntoView for RoomCtx {
 
     fn into_view(self) -> Self::V {
         let state = use_context::<Rc<ChatState>>().unwrap();
-        let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
+        // let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
+        let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
         let selected = Trigger::new();
         let need_update = Trigger::new();
 
@@ -86,13 +87,22 @@ impl IntoView for RoomCtx {
         // -- Effect to evaulate if last msg changed and therefore is a need to update room_view
         create_effect(move |_| {
             trace!("Evaluate 'last msg' for {}", room6.id);
-            if let Some(id) = msgs_trackerv2.get() {
+            if let MsgView::NewMsg(id) = msg_view.get() {
                 if id == room6.id {
                     trace!("{} needs update", room6.id);
                     need_update.notify()
                 }
             }
         });
+        // create_effect(move |_| {
+        //     trace!("Evaluate 'last msg' for {}", room6.id);
+        //     if let Some(id) = msgs_trackerv2.get() {
+        //         if id == room6.id {
+        //             trace!("{} needs update", room6.id);
+        //             need_update.notify()
+        //         }
+        //     }
+        // });
         // let last_msg_memo = create_memo(move |_| {
         //     // msgs_tracker.track();
         //     trace!("->> last_msg_memo");
@@ -194,7 +204,7 @@ impl IntoView for RoomCtx {
             if need_upt {
                 trace!("into_view for RoomCtx: need_upt is `true`");
                 state3.active_room.set(Some(room.id.clone()));
-                msgs_trackerv2.set(Some(room.id.clone()));
+                msg_view.set(MsgView::NewMsg(room.id.clone()));
             }
         });
 

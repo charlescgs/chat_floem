@@ -6,7 +6,7 @@ use serde::Serialize;
 use ulid::Ulid;
 
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Id {
     pub tb: Tb,
     pub id: Ulid
@@ -38,12 +38,20 @@ impl Display for Id {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Tb {
+	Empty,
     Acc,
     Room,
     Msg,
     Com,
     Rea
 }
+
+impl Default for Tb {
+	fn default() -> Self {
+		Self::Empty
+	}
+}
+
 
 impl Display for Tb {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -53,6 +61,7 @@ impl Display for Tb {
 			Tb::Msg => "msg",
 			Tb::Rea => "reaction",
 			Tb::Com => "msg_comment",
+			Tb::Empty => "empty",
 			// Tb::Inv => "room_invite",
 			// Tb::SentTo => "sent_to",
 			// Tb::DelTo => "delivered_by",

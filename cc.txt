@@ -2,12 +2,12 @@
   "theme": "Dark",
   "language": "English",
   "position": {
-    "x": 1116.0,
-    "y": 209.33333333333334
+    "x": 1182.0,
+    "y": 418.0
   },
   "size": {
-    "width": 752.6666666666666,
-    "height": 572.0
+    "width": 730.0,
+    "height": 498.0
   },
   "scale": 1.0
 }
