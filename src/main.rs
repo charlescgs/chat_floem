@@ -14,6 +14,7 @@ use cont::msg::{Msg, Text};
 use editor::core::editor::EditType;
 use editor::core::selection::{SelRegion, Selection};
 use editor::text::{default_light_theme, SimpleStyling};
+use floem::action::debounce_action;
 use floem::kurbo::Rect;
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
@@ -551,7 +552,6 @@ fn tab_msgs_view(new_msg_scroll_end: Trigger) -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
     let state2 = state.clone();
     let state3 = state.clone();
-    // let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
     let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
     let scroll_pos = RwSignal::new(Rect::default());
     
@@ -586,43 +586,15 @@ fn tab_msgs_view(new_msg_scroll_end: Trigger) -> impl IntoView {
             |(_, v)| {
                 info!("dyn_stack: msg (view_fn) for: {}", v.borrow().room_id);
                 main_msg_view(v)
-                // empty()
             }
         ).debug_name("msgs view")
-        .style(|s| s
-            .flex_direction(FlexDirection::ColumnReverse)
-            .width_full()
-            .align_items(AlignItems::Start)
-            .column_gap(5.)
-        )
-        .scroll()
-        .debug_name("msgs scroll")
-        .style(|s| s
-            .size_full()
-            .padding(5.)
-            .padding_right(7.)
-        )
-        .scroll_style(|s| s
-            .handle_thickness(6.)
-            .shrink_to_fit()
-        )
-        .scroll_to_percent(move || {
-            trace!("scroll_to_percent");
-            new_msg_scroll_end.track();
-            100.0
-        })
+        .style(|s| s.size_full())
         .on_resize(move |rect| {
             scroll_pos.set(rect);
-        })
-        .on_scroll(move |rect| {
-            if rect.y0 == 0.0 {
-                debug!("on_scroll: load_more notified!");
-                msg_view.set(MsgView::LoadMore(rect));
-            }
         }),
     )).debug_name("msgs stack")
     .style(|s| s
-        .padding(10.)
+        .padding(5.)
         .background(Color::LIGHT_GREEN)
         .border_color(Color::BLACK)
         .border(1.)
