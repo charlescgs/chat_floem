@@ -422,7 +422,8 @@ fn rooms_view() -> impl IntoView {
 pub enum MsgView {
     None,
     NewMsg(Id),
-    LoadMore(Rect)
+    LoadMore(Rect),
+    // MsgUpdated((Id, Id)) // 0: RoomId, 1: MsgId
 }
 
 

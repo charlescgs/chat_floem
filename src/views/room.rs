@@ -69,15 +69,15 @@ impl IntoView for RoomCtx {
 
     fn into_view(self) -> Self::V {
         let state = use_context::<Rc<ChatState>>().unwrap();
+        let state2 = state.clone();
+        let state3 = state.clone();
+        let state4 = state.clone();
         // let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
         let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
         let new_msg_scroll_end = use_context::<Trigger>().unwrap();
         let selected = Trigger::new();
         let need_update = Trigger::new();
 
-        let state2 = state.clone();
-        let state3 = state.clone();
-        let state5 = state.clone();
         let room = Rc::new(self);
         let room2 = room.clone();
         let room3 = room.clone();
@@ -86,6 +86,7 @@ impl IntoView for RoomCtx {
         let room6 = room.clone();
 
         // -- Effect to evaulate if last msg changed and therefore is a need to update room_view
+        // TODO: make it update only text and fetch avatar and name only if person changed
         create_effect(move |_| {
             trace!("Evaluate 'last msg' for {}", room6.id);
             if let MsgView::NewMsg(id) = msg_view.get() {
@@ -95,37 +96,12 @@ impl IntoView for RoomCtx {
                 }
             }
         });
-        // create_effect(move |_| {
-        //     trace!("Evaluate 'last msg' for {}", room6.id);
-        //     if let Some(id) = msgs_trackerv2.get() {
-        //         if id == room6.id {
-        //             trace!("{} needs update", room6.id);
-        //             need_update.notify()
-        //         }
-        //     }
-        // });
-        // let last_msg_memo = create_memo(move |_| {
-        //     // msgs_tracker.track();
-        //     trace!("->> last_msg_memo");
-        //     state4.data.with_untracked(|data| {
-        //         if let Some(msgs) = data.get(&self.id.id) {
-        //             if let Some((id, msg_ctx)) = msgs.borrow().last_key_value() {
-        //                 trace!("->> last_msg_memo: got {} {}", msg_ctx.author.username, msg_ctx.msg.text.current);
-        //                 (
-        //                     msg_ctx.author.av.clone(),
-        //                     msg_ctx.author.username.clone(),
-        //                     msg_ctx.msg.text.current.clone()
-        //                 )
-        //             } else { ("---".into(), "---".into(), "no msg yet".into()) }
-        //         } else { ("--".into(), "--".into(), "no msg yet".into()) }
-        //     })
-        // });
 
         let av = dyn_view(move || {
             need_update.track();
             trace!("dyn_view for avatar");
             img({
-                let st = state5.clone();
+                let st = state4.clone();
                 let room = room2.clone();
                 move || {
                     let img_data = st.data.with_untracked(|rooms| {
@@ -174,10 +150,10 @@ impl IntoView for RoomCtx {
         let last_msg = label(move || {
             need_update.track();
 
-            state2.data.with_untracked(|rooms| {
+            state2.rooms_msgs.with_untracked(|rooms| {
                 trace!("current text");
                 if let Some(msgs) = rooms.get(&room4.id.id) {
-                    if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
+                    if let Some(msg_ctx) = msgs.borrow().last_msg() {
                         let text = msg_ctx.msg.text.current.clone();
                         let more_than_two_columns = text.lines().count() > 2;
                         // -- trim msg if needed
@@ -191,6 +167,23 @@ impl IntoView for RoomCtx {
                     } else { "no msgs yet..".into() }
                 } else { "no msgs yet..".into() }
             })
+            // state2.data.with_untracked(|rooms| {
+            //     trace!("current text");
+            //     if let Some(msgs) = rooms.get(&room4.id.id) {
+            //         if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
+            //             let text = msg_ctx.msg.text.current.clone();
+            //             let more_than_two_columns = text.lines().count() > 2;
+            //             // -- trim msg if needed
+            //             if more_than_two_columns {
+            //                 let mut t: String = text.lines().take(2).collect();
+            //                 t.push_str("...");
+            //                 t
+            //             } else {
+            //                 text
+            //             }
+            //         } else { "no msgs yet..".into() }
+            //     } else { "no msgs yet..".into() }
+            // })
         }).style(|s| s.max_size_full().text_ellipsis());
         
         create_effect(move |_| {

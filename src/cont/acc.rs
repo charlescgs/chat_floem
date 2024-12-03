@@ -10,7 +10,7 @@ pub(super) static ACC_COUNTER: AtomicU8 = AtomicU8::new(0);
 
 
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Account {
     pub acc_id: Id,
     pub username: String,

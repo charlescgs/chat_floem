@@ -11,7 +11,7 @@ use crate::util::{Id, Tb};
 
 
 /// Holds all data connected to the single message. 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Msg {
     #[serde(rename = "id")]
     pub msg_id: Id,
@@ -41,7 +41,7 @@ pub struct Msg {
 }
 
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MsgComment {
     #[serde(rename = "id")]
     pub com_id: Id,
@@ -61,7 +61,7 @@ pub struct MsgComment {
 }
 
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reaction {
     #[serde(rename = "id")]
     pub rea_id: Id,
@@ -96,7 +96,7 @@ fn de_emoji<'de, D: Deserializer<'de>>(deserializer: D) -> Result<char, D::Error
 /// All media files that can be attached to the message.
 /// TODO: change it to struct with enum on media type.
 /// TODO: make edit history more that a string?
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaType {
     Picture {
         media_id: Id,
@@ -296,7 +296,7 @@ impl MediaType {
 
 
 /// Message Text type to hold current content - as well as - edits history and count.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Text {
     /// Most recent text content.
     pub current: String,
@@ -308,7 +308,7 @@ pub struct Text {
 
 
 /// Allowed media types.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaExt {
     Txt,
     Jpg,
@@ -333,7 +333,7 @@ impl Display for MediaExt {
 
 
 /// Holds data of the single edit on the message  text or it's media file.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MsgEdit {
     /// Edit stamp.
     pub stamp: Datetime,

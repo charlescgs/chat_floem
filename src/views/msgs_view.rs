@@ -2,17 +2,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use floem::prelude::*;
-use floem::reactive::use_context;
-use floem::reactive::Trigger;
-use floem::taffy::AlignItems;
-use floem::taffy::FlexDirection;
-use tracing_lite::debug;
+use floem::reactive::{use_context, Trigger};
+use floem::taffy::{AlignItems, FlexDirection};
+use tracing_lite::{debug, info, trace};
 use im_rc::vector;
-use tracing_lite::info;
-use tracing_lite::trace;
 
-use crate::ChatState;
-use crate::MsgView;
+use crate::{ChatState, MsgView};
 use super::chunks::RoomMsgChunks;
 
 

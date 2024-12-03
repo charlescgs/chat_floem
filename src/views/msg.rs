@@ -19,7 +19,7 @@ static COUNTER: AtomicU16 = AtomicU16::new(0);
 
 
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MsgCtx {
     pub id: Id,
     pub author: Rc<Account>,
@@ -74,6 +74,18 @@ impl MsgCtx {
             msg: Rc::new(m),
             room_owner: true
         }
+    }
+}
+
+impl PartialOrd for MsgCtx {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.id.id.cmp(&other.id.id))
+    }
+}
+
+impl Ord for MsgCtx {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.id.cmp(&other.id.id)
     }
 }
 
