@@ -13,7 +13,7 @@ use tracing_lite::trace;
 
 use crate::ChatState;
 use crate::MsgView;
-use super::msg::RoomMsgChunks;
+use super::chunks::RoomMsgChunks;
 
 
 

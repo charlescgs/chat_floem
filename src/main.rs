@@ -30,8 +30,9 @@ use im_rc::vector;
 use tracing_lite::{debug, error, info, trace, warn, Level, Subscriber};
 use ulid::Ulid;
 use util::{Id, Tb};
-use views::msg::{MsgCtx, RoomMsgChunks};
-use views::msg_view::main_msg_view;
+use views::chunks::RoomMsgChunks;
+use views::msg::MsgCtx;
+use views::msgs_view::main_msg_view;
 use views::room::{RoomCtx, ROOM_IDX};
 
 pub mod element;
@@ -44,8 +45,9 @@ pub mod cont {
 pub mod util;
 pub mod views {
     pub mod msg;
-    pub mod msg_view;
+    pub mod msgs_view;
     pub mod room;
+    pub mod chunks;
 }
 
 pub const SIDEBAR_WIDTH: f64 = 150.0;
