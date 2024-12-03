@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono_lite::Datetime;
 use floem::{prelude::*, AnyView};
-use im_rc::{vector, Vector};
+use im::{vector, Vector};
 use tracing_lite::{debug, error, info, trace, warn};
 use ulid::Ulid;
 
@@ -19,7 +19,7 @@ static COUNTER: AtomicU16 = AtomicU16::new(0);
 
 
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct MsgCtx {
     pub id: Id,
     pub author: Rc<Account>,
@@ -89,11 +89,19 @@ impl Ord for MsgCtx {
     }
 }
 
+impl PartialEq for MsgCtx {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.id == other.id.id
+    }
+}
+
+impl Eq for MsgCtx {}
+
 impl IntoView for MsgCtx {
     type V = AnyView;
 
     fn into_view(self) -> Self::V {
-        trace!("MsgCtx into_view()");
+        trace!("MsgCtx into_view() for: {}", self.msg.text.current);
         let text = self.msg.text.current.clone();
         let time = self.msg.created.clone();
         let author = self.author.username.clone();

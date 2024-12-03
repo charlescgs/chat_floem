@@ -5,7 +5,7 @@ use floem::prelude::*;
 use floem::reactive::{use_context, Trigger};
 use floem::taffy::{AlignItems, FlexDirection};
 use tracing_lite::{debug, info, trace};
-use im_rc::vector;
+use im::{vector, Vector};
 
 use crate::{ChatState, MsgView};
 use super::chunks::RoomMsgChunks;
@@ -19,7 +19,7 @@ pub fn main_msg_view(msgs: Rc<RefCell<RoomMsgChunks>>) -> impl IntoView {
     let new_msg_scroll_end = Trigger::new();
     
     let room_msgs = move || {
-        debug!("->> Compute room_msgs");
+        debug!("Computing room_msgs..");
         match msg_view.get() {
             MsgView::None => vector!(),
             MsgView::NewMsg(room) => {
@@ -27,6 +27,11 @@ pub fn main_msg_view(msgs: Rc<RefCell<RoomMsgChunks>>) -> impl IntoView {
                 for each in msgs.borrow().reload() {
                     chunk_iter.append(each.msgs.clone());
                 }
+                trace!("room_msgs: reloaded msgs({})", chunk_iter.len());
+                for m in &chunk_iter {
+                    println!("{} - {}", m.msg.created.human_formatted(), m.msg.text.current);
+                }
+                
                 new_msg_scroll_end.notify();
                 chunk_iter
             },
@@ -35,6 +40,10 @@ pub fn main_msg_view(msgs: Rc<RefCell<RoomMsgChunks>>) -> impl IntoView {
                 for each in msgs.borrow_mut().load_next() {
                     chunk_iter.append(each.msgs.clone());
                 }
+                for m in &chunk_iter {
+                    println!("{} - {}", m.msg.created.human_formatted(), m.msg.text.current);
+                }
+                trace!("room_msgs: loaded more msgs({})", chunk_iter.len());
                 chunk_iter
             }
         }
@@ -58,6 +67,26 @@ pub fn main_msg_view(msgs: Rc<RefCell<RoomMsgChunks>>) -> impl IntoView {
                     )
                 )
             }
+    // virtual_stack(
+    //     VirtualDirection::Vertical,
+    //     VirtualItemSize::Fixed(Box::new(|| 70.) ),
+    //     move || {
+    //         debug!("v_stack: each_fn");
+    //         room_msgs().into_iter().rev().enumerate().collect::<Vector<_>>()
+    //     },
+    //     |(idx, msg)| {
+    //         debug!("v_stack: key_fn");
+    //         *idx
+    //     },
+    //     |(_, msg)| {
+    //         debug!("v_stack: view_fn");
+    //         let id = msg.id.id.0;
+    //         msg
+    //             .style(move |s| s.apply_if(id % 2 == 0, // for now
+    //                 |s| s.align_self(AlignItems::End)
+    //                 )
+    //             )
+    //         }
     ).debug_name("msgs list")
     .style(|s| s
         .flex_direction(FlexDirection::ColumnReverse)
@@ -81,5 +110,12 @@ pub fn main_msg_view(msgs: Rc<RefCell<RoomMsgChunks>>) -> impl IntoView {
         trace!("scroll_to_percent");
         new_msg_scroll_end.track();
         100.0
+    })
+    .on_scroll(move |rect| {
+        if rect.y0 == 0.0 {
+            debug!("on_scroll: load_more notified!");
+            msg_view.set(MsgView::LoadMore(rect));
+            // load_more.notify();
+        }
     })
 }

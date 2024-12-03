@@ -3,7 +3,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use floem::prelude::*;
-use im_rc::{vector, Vector};
+use im::{vector, Vector};
 use tracing_lite::{debug, error, info, trace, warn};
 use ulid::Ulid;
 
@@ -111,24 +111,27 @@ impl RoomMsgChunks {
         match self.chunks.last_mut() {
             Some(chunk) => {
                 if chunk.count >= 20 {
+                    trace!("fn: append_new_msg: chunk.count >= 20");
                     // -- Create new chunk
                     self.chunks.push(MsgChunk::new(Vector::unit(msg)));
                     self.chunks_count += 1;
                     self.total_msgs += 1;
-
+                    
                     let mut display_idx = self.last_chunk_on_display.get();
                     self.last_chunk_on_display.set(display_idx.saturating_add(1));
                 } else {
+                    trace!("fn: append_new_msg: chunk.count IS NOT >= 20");
                     // -- Push onto existing chunk
                     chunk.add_msg(msg);
                     self.total_msgs += 1;
                 }
             },
             None => {
+                trace!("fn: append_new_msg: chunks.last_mut() is None");
                 self.chunks.push(MsgChunk::new(Vector::unit(msg)));
                 self.chunks_count += 1;
                 self.total_msgs += 1;
-                self.last_chunk_on_display.set(0)
+                self.last_chunk_on_display.set(1)
             },
         }
     }
@@ -139,47 +142,42 @@ impl RoomMsgChunks {
         self.chunks_count > self.last_chunk_on_display.get()
     }
 
-    // #[deprecated]
-    // pub fn load_next_chunk(&self) -> Rc<MsgChunk> {
-    //     debug!("load_next_chunk");
-    //     // -- Check how many chunks is loaded and return if no more left
-    //     if self.chunks_count == 0 {
-    //         trace!("nothing to load");
-    //         return Rc::new(MsgChunk::default())
-    //     }
-    //     // -- Load another one (if exist)
-    //     if let Some(next) = self.chunks.get(self.last_chunk_on_display.get() as usize) {
-    //         let old = self.last_chunk_on_display.get();
-    //         self.last_chunk_on_display.set(old.saturating_sub(1));
-    //         trace!("loading next..");
-    //         let chunk = next.clone();
-    //         return chunk
-    //     }
-    //     Rc::new(MsgChunk::default())
-    // }
-    
     /// Load room chunks in range until `last_chunk_on_display` + one.
     pub fn load_next(&self) -> &[MsgChunk] {
         debug!("fn: load_next");
         // -- Check how many chunks is loaded and return if no more left
         if self.chunks_count == 0 {
-            trace!("nothing to load");
-            return [].as_slice()
+            trace!("fn: load_next: nothing to load");
+            return &[]
         }
         // -- Load another one
         trace!("self.last_chunk_on_display: {}", self.last_chunk_on_display.get());
-        let mut old = self.last_chunk_on_display.get();
         let range = {
-            if old == self.chunks_count.saturating_sub(1) {
-                let range = &self.chunks[old as usize..];
-                self.last_chunk_on_display.set(old.saturating_sub(1));
-                range
-            } else {
-                self.last_chunk_on_display.set(old.saturating_sub(1));
-                let range = &self.chunks[old as usize..];
-                range
+            // -- Subtract 1 from chunk_count as index starts from 0, not 1
+            let display_idx = self.last_chunk_on_display.get();
+            let chunks_count = self.chunks_count;
+            debug!("fn: load_next: {} == {}", display_idx, chunks_count);
+            // Case 1: already shown everything (dis_idx == count - 1)
+            if display_idx == chunks_count {
+                self.last_chunk_on_display.set(display_idx.saturating_sub(1));
+                return &self.chunks[(display_idx - 2) as usize..=(chunks_count - 1) as usize]
+            }
+            // Case 2: still unloaded chunks available (dis_idx < count - 1)
+            match display_idx {
+                0 => self.chunks.as_slice(),
+                1 => {
+                    self.last_chunk_on_display.set(display_idx.saturating_sub(1));
+                    self.chunks.as_slice()
+                },
+                other => {
+                    self.last_chunk_on_display.set(display_idx.saturating_sub(1));
+                    &self.chunks[(other - 2) as usize..=(self.chunks_count - 1) as usize]
+                }
             }
         };
+        debug!("loaded data:\ntotal chunks: {}\nlast chunk msg count: {}",
+            range.len(), range.last().unwrap().count
+        );
         range
     }
     
@@ -188,26 +186,42 @@ impl RoomMsgChunks {
         debug!("fn: reload");
         // -- Check how many chunks is loaded and return if no more left
         if self.chunks_count == 0 {
-            trace!("nothing to reload");
-            return [].as_slice()
+            trace!("fn: reload: nothing to reload");
+            return &[]
         }
         // -- Change slice range to 1 if display was 0
         let mut display_idx = self.last_chunk_on_display.get();
         trace!("self.last_chunk_on_display: {display_idx}");
 
+        if self.chunks_count == 1 {
+            trace!("fn: reload: just 1 chunk total");
+            self.last_chunk_on_display.set(0); // TODO: check if not already set
+            return self.chunks.as_slice()
+        }
+
         let reloaded = {
-            if display_idx == self.chunks_count.saturating_sub(1) {
-                &self.chunks[display_idx as usize..]
-            } else {
-                &self.chunks[(display_idx + 1) as usize..]
+            // -- Subtract 1 from chunk_count as index starts from 0, not 1
+            let chunks_count = self.chunks_count;
+            debug!("fn: reload: {} == {}", display_idx, chunks_count);
+            // Case 1: already shown everything (dis_idx == count - 1)
+            // if display_idx == chunks_count {
+            //     return &self.chunks[(display_idx - 1) as usize..=(chunks_count - 1) as usize]
+            // }
+            // Case 2: still unloaded chunks available (dis_idx < count - 1)
+            match display_idx {
+                0 | 1 => self.chunks.as_slice(),
+                other => &self.chunks[(other - 1) as usize..=(self.chunks_count - 1) as usize]
             }
         };
-        trace!("reloading..");
+        debug!("reloaded data:\ntotal chunks: {}\nlast chunk msg count: {}",
+            reloaded.len(), reloaded.last().unwrap().count
+        );
         reloaded
     }
 
     /// Returns reference to last Msg inserted.
     pub fn last_msg(&self) -> Option<&MsgCtx> {
+        debug!("fn: last_msg");
         if self.total_msgs == 0 { return None }
         if let Some(chunk) = self.chunks.last() {
             chunk.last_msg()
@@ -218,6 +232,7 @@ impl RoomMsgChunks {
 
     /// Updates Self with given [MsgCtx].
     pub fn update_one(&mut self, msg: &MsgCtx) {
+        debug!("fn: update_one");
         self.chunks
             .iter_mut()
             // .rev()
@@ -247,6 +262,7 @@ impl RoomMsgChunks {
     }
 
     pub fn find_msg(&self, id: Ulid) -> Option<&MsgCtx> {
+        debug!("fn: find_msg");
         self.chunks
             .iter()
             .find_map(|chunk| {
@@ -331,7 +347,7 @@ impl MsgChunk {
 mod tests {
     use std::rc::Rc;
     use std::time::Duration;
-    use tracing_lite::trace;
+    use tracing_lite::{debug, trace, Subscriber};
 
     use crate::cont::acc::Account;
     use crate::util::{Id, Tb};
@@ -339,6 +355,7 @@ mod tests {
 
     #[test]
     fn chunks_load_reload_test() {
+        Subscriber::new_with_max_level(tracing_lite::Level::DEBUG);
         // 1. Create test msgs
         let act_room = Id::new(Tb::Room);
         let acc = Account {
@@ -370,7 +387,9 @@ mod tests {
         println!("total_msgs: {}", room_chunks.total_msgs);
 
         let reload = room_chunks.reload();
-        assert!(reload.iter().fold(0, |mut count, m| {count += m.count; count}) == 20);
+        let reload_count = reload.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("reload: {reload_count} == 20");
+        assert!(reload_count == 20);
         assert!(reload.len() == 1);
         // println!("->> reload:");
         // println!("count: {}", );
@@ -380,8 +399,10 @@ mod tests {
         //     .collect::<Vec<_>>()
         // );
         let load_next = room_chunks.load_next();
-        assert!(load_next.iter().fold(0, |mut count, m| {count += m.count; count}) == 20);
-        assert!(load_next.len() == 1);
+        let load_next_count = load_next.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("load_next: {load_next_count} == 40");
+        assert!(load_next_count == 40);
+        assert!(load_next.len() == 2);
         // println!("->> load_next:");
         // println!("count: {}", );
         // println!("msgs: {:#?}", load_next
@@ -390,8 +411,10 @@ mod tests {
         //     .collect::<Vec<_>>()
         // );
         let reload1 = room_chunks.reload();
-        assert!(reload1.iter().fold(0, |mut count, m| {count += m.count; count}) == 20);
-        assert!(reload1.len() == 1);
+        let reload1_count = reload1.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("reload1: {reload1_count} == 40");
+        assert!(reload1_count == 40);
+        assert!(reload1.len() == 2);
         // println!("->> reload1:");
         // println!("count: {}", reload1.iter().fold(0, |mut count, m| {count += m.count; count}));
         // println!("msgs: {:#?}", reload1
@@ -400,8 +423,10 @@ mod tests {
         //     .collect::<Vec<_>>()
         // );
         let load_next1 = room_chunks.load_next();
-        assert!(load_next1.iter().fold(0, |mut count, m| {count += m.count; count}) == 40);
-        assert!(load_next1.len() == 2);
+        let load_next1_count = load_next1.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("load_next1: {load_next1_count} == 60");
+        assert!(load_next1_count == 60);
+        assert!(load_next1.len() == 3);
         // println!("->> load_next1:");
         // println!("count: {}", load_next1.iter().fold(0, |mut count, m| {count += m.count; count}));
         // println!("msgs: {:#?}", load_next1
@@ -411,8 +436,10 @@ mod tests {
         // );
 
         let reload2 = room_chunks.reload();
-        assert!(reload2.iter().fold(0, |mut count, m| {count += m.count; count}) == 40);
-        assert!(reload2.len() == 2);
+        let reload2_count = reload2.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("reload2: {reload2_count} == 60");
+        assert!(reload2_count == 60);
+        assert!(reload2.len() == 3);
         // println!("->> reload2:");
         // println!("count: {}", reload2.iter().fold(0, |mut count, m| {count += m.count; count}));
         // println!("msgs: {:#?}", reload2
@@ -422,8 +449,10 @@ mod tests {
         // );
 
         let load_next2 = room_chunks.load_next();
-        assert!(load_next2.iter().fold(0, |mut count, m| {count += m.count; count}) == 60);
-        assert!(load_next2.len() == 3);
+        let load_next2_count = load_next2.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("load_next2: {load_next2_count} == 80");
+        assert!(load_next2_count == 80);
+        assert!(load_next2.len() == 4);
         // println!("->> load_next2:");
         // println!("count: {}", load_next2.iter().fold(0, |mut count, m| {count += m.count; count}));
         // println!("msgs: {:#?}", load_next2
@@ -433,8 +462,10 @@ mod tests {
         // );
 
         let reload3 = room_chunks.reload();
-        assert!(reload3.iter().fold(0, |mut count, m| {count += m.count; count}) == 60);
-        assert!(reload3.len() == 3);
+        let reload3_count = reload3.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("reload3: {reload3_count} == 80");
+        assert!(reload3_count == 80);
+        assert!(reload3.len() == 4);
         // println!("->> reload3:");
         // println!("count: {}", reload3.iter().fold(0, |mut count, m| {count += m.count; count}));
         // println!("msgs: {:#?}", reload3
@@ -444,7 +475,9 @@ mod tests {
         // );
         
         let load_next3 = room_chunks.load_next();
-        assert!(load_next3.iter().fold(0, |mut count, m| {count += m.count; count}) == 80);
+        let load_next3_count = load_next3.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("load_next3: {load_next3_count} == 80");
+        assert!(load_next3_count == 80);
         assert!(load_next3.len() == 4);
         // println!("->> load_next3:");
         // println!("count: {}", load_next3.iter().fold(0, |mut count, m| {count += m.count; count}));

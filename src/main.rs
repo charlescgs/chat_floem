@@ -26,7 +26,7 @@ use floem::prelude::*;
 use floem::reactive::{batch, create_effect, provide_context, use_context, Trigger};
 use floem::taffy::prelude::{minmax, TaffyGridLine};
 use floem::taffy::{AlignContent, AlignItems, FlexDirection, GridPlacement, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
-use im_rc::vector;
+use im::vector;
 use tracing_lite::{debug, error, info, trace, warn, Level, Subscriber};
 use ulid::Ulid;
 use util::{Id, Tb};
@@ -563,22 +563,13 @@ fn tab_msgs_view(new_msg_scroll_end: Trigger) -> impl IntoView {
     let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
     let scroll_pos = RwSignal::new(Rect::default());
     
-    let act_room = state.active_room;
-    let rooms = state.rooms_msgs;
-
-    
-    // create_effect(move |_| {
-    //     debug!("->> effect: load_more");
-        // load_more.track();
-        // TODO:
-        // 1. Check if there is more msgs to load.
-        // 2. Load another chunk.
-        // if state.active_room_msgs_data.
-    // });
+    let act_room = state.active_room.clone();
+    let rooms = state.rooms_msgs.clone();
 
     stack((
         tab(
             move || {
+                trace!("tab: active_fn");
                 match act_room.get() {
                     Some(id) => state2.get_room_idx(&id.id),
                     None => 0
@@ -587,12 +578,12 @@ fn tab_msgs_view(new_msg_scroll_end: Trigger) -> impl IntoView {
             move || rooms.get(),
             move |(x,_)| {
                 let idx = state3.get_room_idx(x);
-                trace!("key_fn: {idx}");
+                trace!("tab: key_fn: {idx}");
                 idx
             }
             ,
             |(_, v)| {
-                info!("dyn_stack: msg (view_fn) for: {}", v.borrow().room_id);
+                info!("tab: view_fn for: {}", v.borrow().room_id);
                 main_msg_view(v)
             }
         ).debug_name("msgs view")
@@ -678,6 +669,7 @@ fn text_editor_view(send_msg: Trigger, new_msg_scroll_end: Trigger) -> impl Into
                 viewed_by_all: false
             };
             let new_msg = MsgCtx::new(new_msg, &msg_author, owner);
+            // trace!("new_msg_text and date: {} {}", new_msg.msg.text.current, new_msg.msg.created.human_formatted());
             state.data.with_untracked(|rooms| {
                 if rooms
                     .get(&active_room.id)
@@ -685,7 +677,7 @@ fn text_editor_view(send_msg: Trigger, new_msg_scroll_end: Trigger) -> impl Into
                     .borrow_mut()
                     .insert(new_msg.msg.msg_id.id, new_msg.clone())
                     .is_none() {
-                        trace!("Inserted new MsgCtx to state.data")
+                        // trace!("Inserted new MsgCtx to state.data")
                     } else {
                         error!("failed to insert new MsgCtx to state.data")
                     }
@@ -694,6 +686,11 @@ fn text_editor_view(send_msg: Trigger, new_msg_scroll_end: Trigger) -> impl Into
             state.rooms_msgs.update(|rooms| {
                 if let Some(room) = rooms.get(&active_room.id) {
                     room.borrow_mut().append_new_msg(new_msg);
+                    // for e in &room.borrow().chunks {
+                    //     for m in &e.msgs {
+                    //         println!("{} - {}", m.msg.created.human_formatted(), m.msg.text.current);
+                    //     }
+                    // }
                     trace!("Inserted new MsgCtx to state.rooms_msgs")
                 } else {
                     if rooms.insert(active_room.id, Rc::new(RefCell::new(RoomMsgChunks::new_from_single_msg(new_msg)))).is_none() {
@@ -708,7 +705,7 @@ fn text_editor_view(send_msg: Trigger, new_msg_scroll_end: Trigger) -> impl Into
             
             doc_signal.with_untracked(|doc| {
                 let mut text_len = doc.text().len();
-                trace!("text len: {text_len}");
+                // trace!("text len: {text_len}");
                 doc.edit_single(Selection::region(0, text_len), "", EditType::DeleteSelection);
             });
             
