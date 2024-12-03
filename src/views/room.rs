@@ -1,6 +1,6 @@
-use std::{collections::HashMap, fmt::Display, rc::Rc, sync::atomic::{AtomicU8, AtomicUsize}};
+use std::{collections::HashMap, fmt::Display, rc::Rc, sync::atomic::AtomicUsize};
 
-use floem::{prelude::*, reactive::{create_effect, use_context, Trigger}, AnyView, IntoView};
+use floem::{prelude::*, reactive::{create_effect, use_context, Trigger}};
 use tracing_lite::trace;
 use ulid::Ulid;
 
@@ -45,7 +45,6 @@ pub struct RoomCtx {
 
 impl RoomCtx {
     pub fn new_from_click(st: Rc<ChatState>) -> Self {
-        // let room_id = Id::new(Tb::Room);
         let acc = if let Some(acc) = Account::new_from_click() {
             acc
         } else {
@@ -66,7 +65,7 @@ impl RoomCtx {
 
 
 impl IntoView for RoomCtx {
-    type V = AnyView;
+    type V = floem::AnyView;
 
     fn into_view(self) -> Self::V {
         let state = use_context::<Rc<ChatState>>().unwrap();

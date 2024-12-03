@@ -11,10 +11,15 @@ use chrono_lite::Datetime;
 use config::launch_with_config;
 use cont::acc::Account;
 use cont::msg::{Msg, Text};
+use editor::command::Command;
+use editor::core::buffer::rope_text::RopeText;
+use editor::core::command::EditCommand;
 use editor::core::editor::EditType;
 use editor::core::selection::{SelRegion, Selection};
+use editor::core::xi_rope::Interval;
 use editor::text::{default_light_theme, SimpleStyling};
 use floem::action::debounce_action;
+use floem::keyboard::Modifiers;
 use floem::kurbo::Rect;
 use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
@@ -22,7 +27,7 @@ use floem::reactive::{batch, create_effect, provide_context, use_context, Trigge
 use floem::taffy::prelude::{minmax, TaffyGridLine};
 use floem::taffy::{AlignContent, AlignItems, FlexDirection, GridPlacement, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
 use im_rc::vector;
-use tracing_lite::{debug, info, trace, Level, Subscriber};
+use tracing_lite::{debug, error, info, trace, warn, Level, Subscriber};
 use ulid::Ulid;
 use util::{Id, Tb};
 use views::msg::{MsgCtx, RoomMsgChunks};
@@ -101,7 +106,7 @@ impl ChatState {
 
 // -----------------------
 fn main() {
-    Subscriber::new_with_max_level(Level::DEBUG).with_short_time_format();
+    Subscriber::new_with_max_level(Level::TRACE).with_short_time_format();
     provide_context(Rc::new(ChatState::new())); // Main UI state
     provide_context(RwSignal::new(None::<Id>)); // Msg tracker
     provide_context(RwSignal::new(MsgView::None)); // Msg load tracker
@@ -617,30 +622,25 @@ fn text_editor_view(send_msg: Trigger, new_msg_scroll_end: Trigger) -> impl Into
     let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
     let editor_focus = RwSignal::new(false);
 
-    let editor = text_editor("New message")
+    let editor = text_editor("")
+        .placeholder("Type message..")
         .styling(SimpleStyling::new())
         .style(|s| s.size_full())
         .editor_style(default_light_theme)
         .editor_style(|s| s.hide_gutter(true));
-    let ed_sig = RwSignal::new(editor.editor().clone());
-    let doc = editor.doc();
-    let doc2 = editor.doc();
-    // let ed = editor_view(ed_sig, move |e| editor_focus.get());
-    
-    let doc_signal = RwSignal::new(doc);
-
-    // create_effect(move |_| {
-    //     editor_focus.track();
-    //     doc2.edit_single(Selection::new(), "", EditType::Other);
-    // });
-    
+    let doc_signal = editor.editor().doc_signal();
+    // let editor_focus_view = editor.editor().editor_view_id;
+   
     create_effect(move |_| {
         info!("effect: create msg");
         send_msg.track();
         let text = doc_signal.with_untracked(|doc| {
             doc.rope_text().text.to_string()
         });
-        if text.is_empty() { return };
+        if text.is_empty() {
+            warn!("Text is empty");
+            return
+        };
         // -- Get active room
         if let Some(active_room) = state.active_room.get_untracked() {
             info!(" for {active_room}");
@@ -677,13 +677,15 @@ fn text_editor_view(send_msg: Trigger, new_msg_scroll_end: Trigger) -> impl Into
             let new_msg = MsgCtx::new(new_msg, &msg_author, owner);
             state.data.with_untracked(|rooms| {
                 if rooms
-                .get(&active_room.id)
-                .unwrap()
-                .borrow_mut()
-                .insert(new_msg.msg.msg_id.id, new_msg.clone())
-                .is_none() {
-                    trace!("Inserted new MsgCtx to state.data")
-                }
+                    .get(&active_room.id)
+                    .unwrap()
+                    .borrow_mut()
+                    .insert(new_msg.msg.msg_id.id, new_msg.clone())
+                    .is_none() {
+                        trace!("Inserted new MsgCtx to state.data")
+                    } else {
+                        error!("failed to insert new MsgCtx to state.data")
+                    }
             });
             // -- Save it as chunk
             state.rooms_msgs.update(|rooms| {
@@ -701,15 +703,18 @@ fn text_editor_view(send_msg: Trigger, new_msg_scroll_end: Trigger) -> impl Into
             msg_view.set(MsgView::NewMsg(active_room));
             new_msg_scroll_end.notify();
             
-            doc_signal.update(|d| {
-                let t = d.text();
-                trace!("text len: {}", t.len());
-                let mut sel = Selection::new();
-                sel.add_region(SelRegion::new(0, t.len(), None));
-                d.edit_single(sel, "", EditType::Delete);
+            doc_signal.with_untracked(|doc| {
+                let mut text_len = doc.text().len();
+                trace!("text len: {text_len}");
+                doc.edit_single(Selection::region(0, text_len), "", EditType::DeleteSelection);
             });
-            // editor_focus.set(true);
-            // editor.editor().active.set(true);
+            
+            // editor_focus_view.with_untracked(|efv| {
+            //     if let Some(view_id) = efv {
+            //         info!("editor focus requested");
+            //         view_id.request_focus()
+            //     }
+            // })
         }
     });
     
@@ -749,8 +754,9 @@ pub fn editor_toolbar_view(send_msg: Trigger) -> impl IntoView {
         v_stack((
             button("Send").action(move || {
                 send_msg.notify();
-            }).clear_focus(move || send_msg.track()),
-            button("Attach")
+            })
+            // .clear_focus(move || send_msg.track()),
+            , button("Attach")
         )).style(|s| s.gap(5.)),
     )).debug_name("editor buttons")
     .style(|s| s
