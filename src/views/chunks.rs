@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 use std::cell::Cell;
-use std::rc::Rc;
 
-use floem::prelude::*;
 use im::{vector, Vector};
-use tracing_lite::{debug, error, info, trace, warn};
+use tracing_lite::{debug, info, trace, warn};
 use ulid::Ulid;
 
 use crate::util::Id;
@@ -38,6 +36,12 @@ pub struct RoomMsgChunks {
 }
 
 impl RoomMsgChunks {
+    pub fn new(room: Id) -> Self {
+        Self {
+            room_id: room,
+            ..Self::default()
+        }
+    }
     pub fn new_from_single_msg(msg: MsgCtx) -> Self {
         let mut chunk = MsgChunk::default();
         let room_id = msg.room.clone();
@@ -51,7 +55,7 @@ impl RoomMsgChunks {
         }
     }
     /// Create new chunks from message map.
-    pub fn new(msgs: BTreeMap<Ulid, MsgCtx>, room_id: Id) -> Self {
+    pub fn new_from_msgs(msgs: BTreeMap<Ulid, MsgCtx>, room_id: Id) -> Self {
         let total_msgs = msgs.len() as u16;
         info!("total msgs: {total_msgs}");
         let chunks = {
@@ -117,7 +121,7 @@ impl RoomMsgChunks {
                     self.chunks_count += 1;
                     self.total_msgs += 1;
                     
-                    let mut display_idx = self.last_chunk_on_display.get();
+                    let display_idx = self.last_chunk_on_display.get();
                     self.last_chunk_on_display.set(display_idx.saturating_add(1));
                 } else {
                     trace!("fn: append_new_msg: chunk.count IS NOT >= 20");
@@ -189,8 +193,7 @@ impl RoomMsgChunks {
             trace!("fn: reload: nothing to reload");
             return &[]
         }
-        // -- Change slice range to 1 if display was 0
-        let mut display_idx = self.last_chunk_on_display.get();
+        let display_idx = self.last_chunk_on_display.get();
         trace!("self.last_chunk_on_display: {display_idx}");
 
         if self.chunks_count == 1 {
@@ -202,6 +205,7 @@ impl RoomMsgChunks {
         let reloaded = {
             // -- Subtract 1 from chunk_count as index starts from 0, not 1
             let chunks_count = self.chunks_count;
+            let last_chunk_msg_count = self.chunks.last().unwrap().count;
             debug!("fn: reload: {} == {}", display_idx, chunks_count);
             // Case 1: already shown everything (dis_idx == count - 1)
             // if display_idx == chunks_count {
@@ -210,7 +214,13 @@ impl RoomMsgChunks {
             // Case 2: still unloaded chunks available (dis_idx < count - 1)
             match display_idx {
                 0 | 1 => self.chunks.as_slice(),
-                other => &self.chunks[(other - 1) as usize..=(self.chunks_count - 1) as usize]
+                other if last_chunk_msg_count > 18 => {
+                    &self.chunks[(other - 1) as usize..=(self.chunks_count - 1) as usize]
+                },
+                other => {
+                    self.last_chunk_on_display.set(display_idx.saturating_sub(1));
+                    &self.chunks[(other - 2) as usize..=(self.chunks_count - 1) as usize]
+                },
             }
         };
         debug!("reloaded data:\ntotal chunks: {}\nlast chunk msg count: {}",
@@ -531,7 +541,7 @@ mod tests {
             let msg = MsgCtx::new_from_click(&act_room, &acc);
             msgs_vec.push(msg);
         }
-        let len = msgs_vec.len();
+        // let len = msgs_vec.len();
         let msg_idx = 15;
         let mut msg_to_upt = msgs_vec.get(msg_idx).unwrap().clone();
         let msg_id = msg_to_upt.id.id;
@@ -559,5 +569,52 @@ mod tests {
         // println!("updated: {}", msg_to_upt.msg.text.current);
         // println!("fetched_after_update: {}", fetched.msg.text.current);
         assert_eq!(&fetched.msg.text.current, &msg_to_upt.msg.text.current)
+    }
+
+    #[test]
+    fn chunks_load_2_test() {
+        Subscriber::new_with_max_level(tracing_lite::Level::DEBUG);
+        // 1. Create test msgs
+        let act_room = Id::new(Tb::Room);
+        let acc = Account {
+            acc_id: Id::new(Tb::Acc),
+            username: "Karol".into(),
+            av: Rc::new(vec![]),
+        };
+
+        let mut msgs_vec = Vec::with_capacity(80);
+        for _ in 0..52 {
+            std::thread::sleep(Duration::from_millis(2));
+            let msg = MsgCtx::new_from_click(&act_room, &acc);
+            msgs_vec.push(msg);
+        }
+        let len = msgs_vec.len();
+        // 2. Insert them into RoomMsgChunks
+        let mut room_chunks = RoomMsgChunks::default();
+        room_chunks.room_id = act_room.clone();
+        for each in msgs_vec {
+            room_chunks.append_new_msg(each);
+        }
+        // 3. Print it and assert.
+        println!("->> Before:");
+        println!("room_id: {}", room_chunks.room_id);
+        println!("anymore_available: {}", room_chunks.anymore_available());
+        println!("msgs_vec len: {len}");
+        println!("chunks_count: {}", room_chunks.chunks_count);
+        println!("last_chunk_on_display: {}", room_chunks.last_chunk_on_display.get());
+        println!("total_msgs: {}", room_chunks.total_msgs);
+
+        let reload = room_chunks.reload();
+        let reload_count = reload.iter().fold(0, |mut count, m| {count += m.count; count});
+        debug!("reload: {reload_count} == 22");
+        assert!(reload_count == 32);
+        assert!(reload.len() == 2);
+        println!("->> reload:");
+        println!("count: {reload_count}", );
+        println!("msgs: {:#?}", reload
+            .iter()
+            .map(|mc| mc.msgs.iter().map(|m| m.msg.text.current.clone()).collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+        );
     }
 }

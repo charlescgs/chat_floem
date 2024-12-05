@@ -16,6 +16,10 @@ impl Id {
     pub fn new(tb: Tb) -> Self {
         Self { tb, id: ulid::Ulid::new() }
     }
+
+	pub fn ulid(&self) -> Ulid {
+		self.id
+	}
 }
 
 impl FromStr for Id {

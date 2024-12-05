@@ -1,6 +1,3 @@
-use std::cell::Cell;
-use std::collections::BTreeMap;
-use std::ops::Add;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
@@ -8,8 +5,7 @@ use std::time::Duration;
 use chrono_lite::Datetime;
 use floem::{prelude::*, AnyView};
 use im::{vector, Vector};
-use tracing_lite::{debug, error, info, trace, warn};
-use ulid::Ulid;
+use tracing_lite::trace;
 
 use crate::cont::acc::Account;
 use crate::cont::msg::{Msg, Text};
@@ -126,9 +122,9 @@ impl IntoView for MsgCtx {
     }
 }
 
-pub fn layout_text(text: String) -> Label {
-    todo!()
-}
+// pub fn layout_text(text: String) -> Label {
+//     todo!()
+// }
 
 
 

@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::atomic::{AtomicU8, Ordering}};
+use std::{rc::Rc, sync::{atomic::{AtomicU8, Ordering}}};
 
 use chrono_lite::Datetime;
 use serde::{Deserialize, Serialize};

@@ -1,13 +1,22 @@
 use std::{collections::HashMap, fmt::Display, rc::Rc, sync::atomic::AtomicUsize};
 
 use floem::{prelude::*, reactive::{create_effect, use_context, Trigger}};
-use tracing_lite::trace;
+use tracing_lite::{trace, warn};
 use ulid::Ulid;
 
 use crate::{cont::acc::Account, util::{Id, Tb}, ChatState, MsgView};
-use super::msg::MsgCtx;
+use super::{chunks::RoomMsgChunks, msg::MsgCtx};
 
 pub(crate) static ROOM_IDX: AtomicUsize = AtomicUsize::new(0);
+
+
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RoomViewUpt {
+    Full,
+    OnlyText,
+    None
+}
 
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -31,16 +40,30 @@ impl Display for RoomLabel {
 }
 
 
+/// main structure for the room essential data.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoomCtx {
+    /// Room Id.
     pub id: Id,
+    /// Room label being shown for the user.  
+    /// Can be member/owner name, custom or None,.
     pub label: RwSignal<RoomLabel>,
+    /// Avatar for the last msg view.
+    pub last_msg_avatar: RwSignal<Option<Vec<u8>>>,
+    /// Owner data.
     pub owner: Account,
+    /// All room members (without the owner).
     pub members: HashMap<Ulid, Account>,
+    /// All room messages grouped in `Chunks`.
+    pub msgs: RwSignal<RoomMsgChunks>,
+    /// Last Msg (if any).
     pub last: RwSignal<Option<MsgCtx>>,
+    /// If contains any unread messages.
     pub unread: RwSignal<bool>,
+    /// Number of unread messages.
     pub num_unread: RwSignal<u16>,
-    pub description: RwSignal<Option<String>>,
+    /// Optional room description.
+    pub description: RwSignal<Option<String>>
 }
 
 impl RoomCtx {
@@ -50,15 +73,18 @@ impl RoomCtx {
         } else {
             st.accounts.with_untracked(|accs| accs.values().next().unwrap().clone())
         };
+        let id = Id::new(Tb::Room);
         Self {
-            id: Id::new(Tb::Room),
+            msgs: RwSignal::new(RoomMsgChunks::new(id.clone())),
+            id,
             label: RwSignal::new(RoomLabel::None),
             num_unread: RwSignal::new(0),
             unread: RwSignal::new(false),
             description: RwSignal::new(None),
             owner: acc,
             members: HashMap::new(),
-            last: RwSignal::new(None)
+            last: RwSignal::new(None),
+            last_msg_avatar: RwSignal::new(None),
         }
     }
 }
@@ -69,91 +95,41 @@ impl IntoView for RoomCtx {
 
     fn into_view(self) -> Self::V {
         let state = use_context::<Rc<ChatState>>().unwrap();
-        let state2 = state.clone();
-        let state3 = state.clone();
-        let state4 = state.clone();
-        // let msgs_trackerv2 = use_context::<RwSignal<Option<Id>>>().unwrap();
+        let rooms_msgs = state.rooms_msgs;
+        let active_room = state.active_room;
+
         let msg_view = use_context::<RwSignal<MsgView>>().unwrap();
-        let new_msg_scroll_end = use_context::<Trigger>().unwrap();
-        let selected = Trigger::new();
-        let need_update = Trigger::new();
+        // let new_msg_scroll_end = use_context::<Trigger>().unwrap();
+        let room_selected = Trigger::new(); // TODO: have saved last room_id to minimize checks
+        // -- Triggers for fine-grained updates
+        let _need_update = RwSignal::new(RoomViewUpt::None);
+        let need_avatar_change = Trigger::new();
+        let need_label_change = Trigger::new();
+        let need_text_change = Trigger::new();
 
         let room = Rc::new(self);
-        let room2 = room.clone();
-        let room3 = room.clone();
-        let room4 = room.clone();
-        let room5 = room.clone();
-        let room6 = room.clone();
+        let room_id = room.id.id;
+        let last_msg = room.last;
 
         // -- Effect to evaulate if last msg changed and therefore is a need to update room_view
         // TODO: make it update only text and fetch avatar and name only if person changed
         create_effect(move |_| {
-            trace!("Evaluate 'last msg' for {}", room6.id);
+            trace!("effect: evaluate `last_msg` for {room_id}");
             if let MsgView::NewMsg(id) = msg_view.get() {
-                if id == room6.id {
-                    trace!("{} needs update", room6.id);
-                    need_update.notify()
+                if id.id == room_id {
+                    trace!("{room_id} needs update");
+                    
                 }
             }
         });
 
-        let av = dyn_view(move || {
-            need_update.track();
-            trace!("dyn_view for avatar");
-            img({
-                let st = state4.clone();
-                let room = room2.clone();
-                move || {
-                    let img_data = st.data.with_untracked(|rooms| {
-                        if let Some(msgs) = rooms.get(&room.id.id) {
-                            if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
-                                if room.owner.acc_id == msg_ctx.msg.author {
-                                    trace!("img author");
-                                    room.owner.av.clone()
-                                } else {
-                                    trace!("img member");
-                                    match room.members.get(&msg_ctx.msg.author.id) {
-                                        Some(acc) => acc.av.clone(),
-                                        None => Rc::new(Vec::with_capacity(0))
-                                    }
-                                }
-                            } else { Rc::new(Vec::with_capacity(0)) }
-                        } else { Rc::new(Vec::with_capacity(0)) }
-                    });
-                    img_data.to_vec()
-                }
-            }).style(|s| s.size(50., 50.))
-        })
-        .style(|s| s
-            .border(1.)
-            .border_color(Color::NAVY)
-            .border_radius(5.)
-        );
-        
-        let author = label(move || {
-            need_update.track();
-            state.data.with_untracked(|data| {
-                trace!("author");
-                if let Some(msgs) = data.get(&room3.id.id) {
-                    if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
-                        msg_ctx.author.username.clone()
-                    } else { "".into() }
-                } else { "".into() }
-            })
-        })
-            .style(|s| s
-                .padding(5.)
-                .font_bold()
-                .font_size(22.)
-            );
-        
-        let last_msg = label(move || {
-            need_update.track();
 
-            state2.rooms_msgs.with_untracked(|rooms| {
-                trace!("current text");
-                if let Some(msgs) = rooms.get(&room4.id.id) {
-                    if let Some(msg_ctx) = msgs.borrow().last_msg() {
+        let last_msg_text = label(move || {
+            need_text_change.track();
+            trace!("label: last_msg_text");
+            rooms_msgs.with_untracked(|rooms| {
+                if let Some(msgs) = rooms.get(&room_id) {
+                    if let Some(msg_ctx) = msgs.with_untracked(|r| r.last_msg().cloned()) {
                         let text = msg_ctx.msg.text.current.clone();
                         let more_than_two_columns = text.lines().count() > 2;
                         // -- trim msg if needed
@@ -167,51 +143,82 @@ impl IntoView for RoomCtx {
                     } else { "no msgs yet..".into() }
                 } else { "no msgs yet..".into() }
             })
-            // state2.data.with_untracked(|rooms| {
-            //     trace!("current text");
-            //     if let Some(msgs) = rooms.get(&room4.id.id) {
-            //         if let Some((_, msg_ctx)) = msgs.borrow().last_key_value() {
-            //             let text = msg_ctx.msg.text.current.clone();
-            //             let more_than_two_columns = text.lines().count() > 2;
-            //             // -- trim msg if needed
-            //             if more_than_two_columns {
-            //                 let mut t: String = text.lines().take(2).collect();
-            //                 t.push_str("...");
-            //                 t
-            //             } else {
-            //                 text
-            //             }
-            //         } else { "no msgs yet..".into() }
-            //     } else { "no msgs yet..".into() }
-            // })
         }).style(|s| s.max_size_full().text_ellipsis());
-        
-        create_effect(move |_| {
-            selected.track();
-            trace!("effect: 'select room'");
-            let need_upt = state3.active_room.with_untracked(|act| {
-                match act {
-                    Some(id) if id == &room5.id => false,
-                    _ => true
+
+
+        let last_msg_avatar = dyn_view(move || {
+            need_avatar_change.track();
+            trace!("dyn_view for avatar");
+            img({
+                move || {
+                    let img_data = last_msg.with_untracked(|last_msg| {
+                        if let Some(msg) = last_msg {
+                            let new_av = msg.author.av.clone();
+                            trace!("img author");
+                            return new_av
+                        } else {
+                            Rc::new(Vec::with_capacity(0))
+                        }
+                    });
+                    img_data.to_vec()
                 }
-            });
-            if need_upt {
-                trace!("into_view for RoomCtx: need_upt is `true`");
-                state3.active_room.set(Some(room.id.clone()));
-                msg_view.set(MsgView::NewMsg(room.id.clone()));
-                new_msg_scroll_end.notify();
+            }).style(|s| s.size(50., 50.))
+        }).style(|s| s
+            .border(1.)
+            .border_color(Color::NAVY)
+            .border_radius(5.)
+        );
+        
+
+        let last_msg_author = label(move || {
+            need_label_change.track();
+            trace!("label: last_msg_author");
+            last_msg.with_untracked(|last_msg| {
+                if let Some(msg) = last_msg {
+                    msg.author.username.clone()
+                } else {
+                    String::with_capacity(0)
+                }
+            })
+        }).style(|s| s
+            .padding(5.)
+            .font_bold()
+            .font_size(22.)
+        );
+        
+        // -- Select active room
+        create_effect(move |_| {
+            room_selected.track();
+            trace!("effect: select_room");
+            let act_room_state = active_room.get_untracked();
+            match act_room_state {
+                Some(id) if id.id == room_id => {
+                    trace!("effect: select_room: is Some({id})");
+                    false
+                },
+                Some(id) => {
+                    trace!("effect: select_room: new room selected: {id}");
+                    active_room.set(Some(room.id.clone()));
+                    // msg_view.set(MsgView::NewMsg(room.id.clone()));
+                    false
+                },
+                None => {
+                    warn!("effect: select_room fetched active_room is None, selecting current..");
+                    active_room.set(Some(room.id.clone()));
+                    true
+                }
             }
-            // else {
-            //     trace!("into_view for RoomCtx: need_upt is `false`");
-            //     // state3.
+            // if need_upt {
+                // trace!("effect: {} needs_upt", room.id);
+                // new_msg_scroll_end.notify();
             // }
         });
 
-        let top_view = (av, author)
+        let top_view = (last_msg_avatar, last_msg_author)
             .h_stack()
             .debug_name("top_room")
             .style(|s| s.gap(10.).items_center());
-        let main_view = (top_view, last_msg)
+        let main_view = (top_view, last_msg_text)
             .v_stack()
             .debug_name("main_room")
             .style(|s| s.max_size_full().gap(10.));
@@ -227,7 +234,7 @@ impl IntoView for RoomCtx {
                 .border_color(Color::NAVY))
             .into_any()
             .on_click_stop(move |_| {
-                selected.notify();
+                room_selected.notify();
             })
     }
 }

@@ -49,7 +49,7 @@ impl ChatConfig {
             .create(true)
             .open(CONFIG_PATH);
         match config_file {
-            Ok(mut cf) => {
+            Ok(cf) => {
                 match serde_json::to_writer_pretty(cf, self) {
                     Ok(_) => Some(()),
                     Err(e) => { error!("Failed to save config file: {e}"); None }
