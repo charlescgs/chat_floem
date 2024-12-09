@@ -15,7 +15,7 @@ use crate::view_data::session::APP;
 
 
 /// Cunstructs and keeps in sync all rooms list.
-pub fn rooms_view() -> impl IntoView {
+pub fn rooms_view_v2() -> impl IntoView {
     info!("->> rooms_view");
     // 1. Get rooms.
     let rooms = APP.with(|a| a.rooms);
@@ -23,26 +23,30 @@ pub fn rooms_view() -> impl IntoView {
     // 2. Show them as list.
     // let room_selected = Trigger::new();
 
+    // create_effect(move |_| {
 
-    create_effect(move |_| {
-
-    });
+    // });
     
-    dyn_stack(
-        move || rooms.get(),
-        move |(id, _)| *id,
-        move |(id, room)| {
-            room.get()
-        }
-    )   
+    stack((
+        dyn_stack(
+            move || rooms.get(),
+            move |(id, _)| *id,
+            move |(id, room)| {
+                room.get()
+            }
+        ).style(|s| s
+            .flex_col()
+            .width_full()
+            .column_gap(5.)
+        )
         .scroll()
         .debug_name("rooms scroll")
         .style(|s| s
             .size_full()
             .padding(5.)
             .padding_right(7.)
-        ).scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
-        .container()
+        ).scroll_style(|s| s.handle_thickness(6.).shrink_to_fit()),
+    ))
         .style(|s| s
             .background(Color::LIGHT_BLUE)
             .border_color(Color::BLACK)

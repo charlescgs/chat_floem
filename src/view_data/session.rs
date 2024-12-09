@@ -53,17 +53,3 @@ impl UISession {
         }
     }
 }
-
-
-#[derive(Clone, Debug)]
-pub enum MsgUpdate {
-    New {
-        room: Ulid,
-        msg: Ulid
-    },
-    Updated {
-        room: Ulid,
-        msg: Ulid
-    },
-    None
-}

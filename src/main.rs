@@ -24,10 +24,13 @@ use im::vector;
 use tracing_lite::{debug, error, info, trace, warn, Level, Subscriber};
 use ulid::Ulid;
 use util::{Id, Tb};
+use view_data::MsgEvent;
 use views::chunks::RoomMsgChunks;
 use views::msg::MsgCtx;
 // use views::msgs_view::main_msg_view;
 use views::room::{RoomCtx, ROOM_IDX};
+use views::rooms::rooms_view_v2;
+use views::toolbar::toolbar_view_v2;
 
 pub mod common;
 pub mod view_data;
@@ -45,6 +48,7 @@ pub mod views {
     pub mod room;
     pub mod rooms;
     pub mod chunks;
+    pub mod toolbar;
 }
 
 pub const SIDEBAR_WIDTH: f64 = 150.0;
@@ -108,6 +112,7 @@ fn main() {
     provide_context(Rc::new(ChatState::new())); // Main UI state
     provide_context(RwSignal::new(None::<Id>)); // Msg tracker
     provide_context(RwSignal::new(MsgView::None)); // Msg load tracker
+    provide_context(RwSignal::new(MsgEvent::None)); // Msg load tracker
     launch_with_config(app_view_grid)
 }
 
@@ -117,8 +122,8 @@ fn app_view_grid() -> impl IntoView {
     let new_msg_scroll_end = Trigger::new();
     provide_context(new_msg_scroll_end);
     stack((
-        toolbar_view(),
-        rooms_view(),
+        toolbar_view_v2(),
+        rooms_view_v2(),
         // msgs_view(),
         tab_msgs_view(new_msg_scroll_end),
         text_editor_view(send_msg, new_msg_scroll_end),
@@ -186,175 +191,6 @@ fn app_view_grid() -> impl IntoView {
 
 // -----------------------
 
-#[derive(Clone, Debug)]
-pub enum EditList {
-    None,
-    Room,
-    Msg,
-    Account
-}
-
-#[derive(Clone, Debug)]
-pub enum NewList {
-    None,
-    Room,
-    Msg,
-    Account
-}
-
-impl Display for EditList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EditList::None => f.write_str("None"),
-            EditList::Room => f.write_str("Room"),
-            EditList::Msg => f.write_str("Msg"),
-            EditList::Account => f.write_str("Account"),
-        }
-    }
-}
-
-// MARK: toolbar
-
-fn toolbar_view() -> impl IntoView {
-    let edit_list_signal = RwSignal::new(EditList::None);
-    let new_list_signal = RwSignal::new(NewList::None);
-    // -- Id is a room, that got an update
-    // let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
-    let msgs_view = use_context::<RwSignal<MsgView>>().unwrap();
-
-    // -- Action to create test room on click
-    create_effect(move |_| {
-        trace!("create_effect for `New Menu`");
-        let new = new_list_signal.get();
-        match new {
-            NewList::None => { trace!("Clicked NewList::None"); },
-            NewList::Room => {
-                trace!("Clicked NewList::Room");
-                let state = use_context::<Rc<ChatState>>().unwrap();
-
-                let room = RoomCtx::new_from_click(state.clone());
-                batch(|| {
-                    state.accounts.update(|accs| { accs.insert(room.owner.acc_id.id.clone(), room.owner.clone());} );
-                    state.rooms.update(|rooms| { rooms.insert(room.id.id.clone(), room.clone());} );
-                    state.rooms_msgs.update(|chunks| {
-                        let mut def_chunks = RoomMsgChunks::default();
-                        def_chunks.room_id = room.id.clone();
-                        chunks.insert(room.id.id.clone(), RwSignal::new(def_chunks));
-                    });
-                    state.rooms_tabs.update(|tabs| {
-                        let new_idx = ROOM_IDX.fetch_add(1, Ordering::Relaxed);
-                        tabs.insert(room.id.id, new_idx);
-                    });
-                });
-                trace!("Created and inserted test RoomCtx")
-                
-            },
-            NewList::Msg => {
-                trace!("Clicked NewList::Msg");
-                let state = use_context::<Rc<ChatState>>().unwrap();
-                // -- Get active room
-                if let Some(active) = state.active_room.get_untracked() {
-                    // -- Get some account from that room
-                    let acc = state.rooms.with_untracked(|r| {
-                        let room = r.get(&active.id).unwrap();
-                        if room.members.is_empty() {
-                            room.owner.clone()
-                        } else {
-                            room.members.values().next().unwrap().clone()
-                        }
-                    });
-                    // -- Create Msgs
-                    let mut msgs_vec = Vec::with_capacity(40);
-                    for _ in 0..40 {
-                        sleep(Duration::from_millis(2));
-                        let msg = MsgCtx::new_from_click(&active, &acc);
-                        msgs_vec.push(msg);
-                    }
-                    trace!("Created New MsgCtx");
-                    // -- Save it on data
-                    let last = msgs_vec.last().unwrap().room.clone();
-                    // -- Save it as chunks
-                    state.rooms_msgs.with_untracked(|rooms| {
-                        if let Some(room) = rooms.get(&active.id) {
-                            batch(|| {
-                                for each in msgs_vec {
-                                    room.update(|chunks| chunks.append_new_msg(each))
-                                }
-                            });
-                        trace!("Inserted msgs to state.room_msgs {}", active);
-                        // println!("{active} stats:\ntotal_msgs: {}", room.get_untracked().total_msgs);
-                        } else {
-                            error!("Unable to insert msgs to state.room_msgs {}", active)
-                        }
-                    });
-                    // -- Notify all subscribers that this room got an update
-                    msgs_view.set(MsgView::NewMsg(last));
-                }
-            },
-            NewList::Account => {
-                trace!("Clicked NewList::Account");
-                let state = use_context::<Rc<ChatState>>().unwrap();
-                if let Some(acc) = Account::new_from_click() {
-                    state.accounts.update(|accs| { accs.insert(acc.acc_id.id.clone(), acc); })
-                }
-            }
-        }
-    });
-    
-    let new_menu = "New".button().popout_menu(move || {
-        Menu::new("")
-            .entry(MenuItem::new("Msg").action(move || {
-                new_list_signal.set(NewList::Msg);
-            }))
-            .entry(MenuItem::new("Room").action(move || {
-                new_list_signal.set(NewList::Room);
-            }))
-            .separator()
-            .entry(MenuItem::new("Account").action(move || {
-                new_list_signal.set(NewList::Account);
-            }))
-    });
-
-    let edit_menu = "Edit".button().popout_menu(move || {
-        Menu::new("")
-            .entry(MenuItem::new("Account").action(move || {
-                edit_list_signal.set(EditList::Account);
-            }))
-            .separator()
-            .entry(MenuItem::new("Room").action(move || {
-                edit_list_signal.set(EditList::Room);
-            }))
-            .entry(MenuItem::new("Msg").action(move || {
-                edit_list_signal.set(EditList::Msg);
-            }))
-    });
-    
-    stack((
-        h_stack((
-            new_menu,
-            edit_menu,
-            "Settings".button().action(move || {}),
-            "About".button().action(move || {})
-        )).style(|s| s
-            .justify_content(AlignContent::Start)
-            .padding(5.)
-            .row_gap(5.)
-        ),
-    )).debug_name("menu toolbar")
-    .style(|s| s
-        .background(Color::MEDIUM_ORCHID)
-        .border_color(Color::BLACK)
-        .border(1.)
-        .grid_column(Line {
-            start: GridPlacement::from_line_index(1),
-            end: GridPlacement::Span(3)
-        })
-        .grid_row(Line {
-            start: GridPlacement::from_line_index(1),
-            end: GridPlacement::Span(1)
-        })
-    )
-}
 
 // MARK: rooms
 
@@ -375,20 +211,7 @@ fn rooms_view() -> impl IntoView {
                         .border(2)
                         .border_color(Color::DARK_BLUE)
                 ))
-    // stack((
-    //     dyn_stack(move || rooms.get(),
-    //     |(s, _)| s.clone(),
-    //     move |(s, r)| {
-    //         let state3 = state2.clone();
-    //         let r_id = r.id.clone();
-    //         r.style(move |s| 
-    //             s.apply_if(
-    //                 state3.active_room.get().is_some_and(|a|a.id == r_id.id), |s| s
-    //                     .background(Color::LIGHT_GRAY)
-    //                     .border(2)
-    //                     .border_color(Color::DARK_BLUE)
-    //             )
-    //         )
+
         }).debug_name("rooms list")
         .style(|s| s
             .flex_col()
