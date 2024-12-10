@@ -1,25 +1,22 @@
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
 use std::thread::sleep;
 use std::time::Duration;
 
 use floem::prelude::*;
 use floem::menu::{Menu, MenuItem};
-use floem::reactive::batch;
+use floem::reactive::{batch, SignalRead};
 use floem::reactive::create_effect;
 use floem::reactive::use_context;
 use floem::taffy::prelude::TaffyGridLine;
 use floem::taffy::{AlignContent, GridPlacement, Line};
-use tracing_lite::{error, trace};
+use tracing_lite::{debug, error, info, trace};
 
 use crate::cont::acc::Account;
+use crate::view_data::msg::MsgViewData;
 use crate::view_data::room::RoomViewData;
 use crate::view_data::session::APP;
 use crate::view_data::MsgEvent;
-use crate::views::chunks::RoomMsgChunks;
-use crate::views::msg::MsgCtx;
-use crate::views::room::{RoomCtx, ROOM_IDX};
-use crate::{ChatState, MsgView};
+use crate::ChatState;
 
 
 #[derive(Clone, Debug)]
@@ -55,8 +52,6 @@ pub fn toolbar_view_v2() -> impl IntoView {
     let edit_list_signal = RwSignal::new(EditList::None);
     let new_list_signal = RwSignal::new(NewList::None);
     // -- Id is a room, that got an update
-    // let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
-    // let msgs_tracker = use_context::<RwSignal<Option<Id>>>().unwrap();
     let msg_event = use_context::<RwSignal<MsgEvent>>().unwrap();
 
     // -- Action to create test room on click
@@ -66,67 +61,57 @@ pub fn toolbar_view_v2() -> impl IntoView {
         match new {
             NewList::None => { trace!("Clicked NewList::None"); },
             NewList::Room => {
-                trace!("Clicked NewList::Room");
                 let room_view = RoomViewData::new_from_click();
-
+                trace!("Clicked NewList::Room - idx: {} | room: {}", room_view.idx(), room_view.room_id.ulid());
+                
                 APP.with(|app| {
                     batch(|| {
                         app.accounts.update(|accs| { accs.insert(room_view.owner.acc_id.id, room_view.owner.clone());} );
-                        app.rooms.update(|rooms| { rooms.insert(room_view.idx(), RwSignal::new(room_view.clone()));} );
-                        // app.rooms_msgs.update(|chunks| {
-                        //     let mut def_chunks = RoomMsgChunks::default();
-                        //     def_chunks.room_id = room_view.room_id.clone();
-                        //     chunks.insert(room_view.room_id.id.clone(), RwSignal::new(def_chunks));
-                        // });
+                        app.rooms.update(|rooms| {
+                            debug!("room: app.rooms.update");
+                            if let Some(ret) = rooms.insert(room_view.idx(), room_view.clone()) {
+                                error!("value returned when attempted to insert {ret:#?}")
+                            }
+                        });
                         app.rooms_tabs.update(|tabs| {
-                            tabs.insert(room_view.room_id.id, (room_view.idx(), room_view.view_id));
+                            tabs.insert(
+                                room_view.room_id.id,
+                                (room_view.idx(), room_view.view_id, room_view.get_update)
+                            );
                         });
                     });
-                    trace!("Created and inserted test RoomCtx")
+                    trace!("Created and inserted test RoomViewData")
                 });
-
-                
             },
             NewList::Msg => {
                 trace!("Clicked NewList::Msg");
-                let state = use_context::<Rc<ChatState>>().unwrap();
                 // -- Get active room
-                if let Some(active) = state.active_room.get_untracked() {
-                    // -- Get some account from that room
-                    let acc = state.rooms.with_untracked(|r| {
-                        let room = r.get(&active.id).unwrap();
-                        if room.members.is_empty() {
-                            room.owner.clone()
-                        } else {
-                            room.members.values().next().unwrap().clone()
-                        }
-                    });
-                    // -- Create Msgs
-                    let mut msgs_vec = Vec::with_capacity(40);
-                    for _ in 0..40 {
-                        sleep(Duration::from_millis(2));
-                        let msg = MsgCtx::new_from_click(&active, &acc);
-                        msgs_vec.push(msg);
-                    }
-                    trace!("Created New MsgCtx");
-                    // -- Save it on data
-                    let last = msgs_vec.last().unwrap().room.clone();
-                    // -- Save it as chunks
-                    state.rooms_msgs.with_untracked(|rooms| {
-                        if let Some(room) = rooms.get(&active.id) {
-                            batch(|| {
-                                for each in msgs_vec {
-                                    room.update(|chunks| chunks.append_new_msg(each))
+                if let Some(active) = APP.with(|app| app.active_room.get_untracked()) {
+                    APP.with(|app| {
+                        app.rooms.with_untracked(|rooms| {
+                            // -- Get or create account (only in early faze)
+                            let acc = {
+                                let room = rooms.get(&active.idx).unwrap();
+                                if room.members.is_empty() {
+                                    room.owner.clone()
+                                } else {
+                                    room.members.values().next().unwrap().clone()
                                 }
-                            });
-                        trace!("Inserted msgs to state.room_msgs {}", active);
-                        // println!("{active} stats:\ntotal_msgs: {}", room.get_untracked().total_msgs);
-                        } else {
-                            error!("Unable to insert msgs to state.room_msgs {}", active)
-                        }
+                            };
+                            // -- Create msg
+                            let msg = MsgViewData::new_from_click(active.id(), &acc);
+                            // -- Append msg onto `msgs` and `last_msg`
+                            if let Some(room) = rooms.get(&active.idx) {
+                                room.msgs.update(|msgs| {
+                                    msgs.append_new_msg(msg.clone());
+                                    info!("New msg appended!");
+                                });
+                                room.last_msg.set(Some(msg));
+                                // -- Notify subscribers about new msg event
+                                msg_event.set(MsgEvent::NewFor(room.room_id.id));
+                            }
+                        })
                     });
-                    // -- Notify all subscribers that this room got an update
-                    // msgs_view.set(MsgView::NewMsg(last));
                 }
             },
             NewList::Account => {

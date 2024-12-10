@@ -5,8 +5,7 @@ use im::{vector, Vector};
 use tracing_lite::{debug, info, trace, warn};
 use ulid::Ulid;
 
-use crate::util::Id;
-use super::msg::MsgCtx;
+use crate::{util::Id, view_data::msg::MsgViewData};
 
 // MARK: RoomChunks
 
@@ -42,7 +41,7 @@ impl RoomMsgChunks {
             ..Self::default()
         }
     }
-    pub fn new_from_single_msg(msg: MsgCtx) -> Self {
+    pub fn new_from_single_msg(msg: MsgViewData) -> Self {
         let mut chunk = MsgChunk::default();
         let room_id = msg.room.clone();
         chunk.add_msg(msg);
@@ -55,7 +54,7 @@ impl RoomMsgChunks {
         }
     }
     /// Create new chunks from message map.
-    pub fn new_from_msgs(msgs: BTreeMap<Ulid, MsgCtx>, room_id: Id) -> Self {
+    pub fn new_from_msgs(msgs: BTreeMap<Ulid, MsgViewData>, room_id: Id) -> Self {
         let total_msgs = msgs.len() as u16;
         info!("total msgs: {total_msgs}");
         let chunks = {
@@ -110,7 +109,7 @@ impl RoomMsgChunks {
     }
 
     /// Add single [Msg] to the chunk.
-    pub fn append_new_msg(&mut self, msg: MsgCtx) {
+    pub fn append_new_msg(&mut self, msg: MsgViewData) {
         // Get the chunk with youngest msgs and check if full
         match self.chunks.last_mut() {
             Some(chunk) => {
@@ -131,7 +130,7 @@ impl RoomMsgChunks {
                 }
             },
             None => {
-                trace!("fn: append_new_msg: chunks.last_mut() is None");
+                trace!("fn: append_new_msg: appending first msg!");
                 self.chunks.push(MsgChunk::new(Vector::unit(msg)));
                 self.chunks_count += 1;
                 self.total_msgs += 1;
@@ -230,7 +229,7 @@ impl RoomMsgChunks {
     }
 
     /// Returns reference to last Msg inserted.
-    pub fn last_msg(&self) -> Option<&MsgCtx> {
+    pub fn last_msg(&self) -> Option<&MsgViewData> {
         debug!("fn: last_msg");
         if self.total_msgs == 0 { return None }
         if let Some(chunk) = self.chunks.last() {
@@ -240,8 +239,8 @@ impl RoomMsgChunks {
         }
     }
 
-    /// Updates Self with given [MsgCtx].
-    pub fn update_one(&mut self, msg: &MsgCtx) {
+    /// Updates Self with given [MsgViewData].
+    pub fn update_one(&mut self, msg: &MsgViewData) {
         debug!("fn: update_one");
         self.chunks
             .iter_mut()
@@ -271,7 +270,7 @@ impl RoomMsgChunks {
             });
     }
 
-    pub fn find_msg(&self, id: Ulid) -> Option<&MsgCtx> {
+    pub fn find_msg(&self, id: Ulid) -> Option<&MsgViewData> {
         debug!("fn: find_msg");
         self.chunks
             .iter()
@@ -297,7 +296,7 @@ impl RoomMsgChunks {
 pub struct MsgChunk {
     /// Max msgs per chunk: 20 (for now).
     pub count: u8,
-    pub msgs: Vector<MsgCtx>,
+    pub msgs: Vector<MsgViewData>,
 
     /// Earliest msg stored in this MsgChunk.
     pub first: Option<Ulid>,
@@ -306,8 +305,8 @@ pub struct MsgChunk {
 }
 
 impl MsgChunk {
-    // Construct new MsgChunk from the Vector<MsgCtx>.
-    pub fn new(mut msgs: Vector<MsgCtx>) -> Self {
+    // Construct new MsgChunk from the Vector<MsgViewData>.
+    pub fn new(mut msgs: Vector<MsgViewData>) -> Self {
         let (first, last) = {
             if msgs.len() == 1 {
                 let id = msgs.front().unwrap().id.id;
@@ -334,8 +333,8 @@ impl MsgChunk {
         }
     }
 
-    /// Add single [MsgCtx] onto back of the [Vector].
-    pub fn add_msg(&mut self, msg: MsgCtx) {
+    /// Add single [MsgViewData] onto back of the [Vector].
+    pub fn add_msg(&mut self, msg: MsgViewData) {
         // -- Update last msg Ulid
         self.last = Some(msg.id.id);
         // -- If msg is first also update first msg Ulid
@@ -347,7 +346,7 @@ impl MsgChunk {
     }
 
     /// Returns reference to last Msg inserted.
-    pub fn last_msg(&self) -> Option<&MsgCtx> {
+    pub fn last_msg(&self) -> Option<&MsgViewData> {
         self.msgs.last()
     }
 }
@@ -361,7 +360,7 @@ mod tests {
 
     use crate::cont::acc::Account;
     use crate::util::{Id, Tb};
-    use super::{MsgCtx, RoomMsgChunks};
+    use super::{MsgViewData, RoomMsgChunks};
 
     #[test]
     fn chunks_load_reload_test() {
@@ -377,7 +376,7 @@ mod tests {
         let mut msgs_vec = Vec::with_capacity(80);
         for _ in 0..80 {
             std::thread::sleep(Duration::from_millis(2));
-            let msg = MsgCtx::new_from_click(&act_room, &acc);
+            let msg = MsgViewData::new_from_click(act_room.clone(), &acc);
             msgs_vec.push(msg);
         }
         let len = msgs_vec.len();
@@ -505,12 +504,12 @@ mod tests {
             username: "Karol".into(),
             av: Rc::new(vec![]),
         };
-        let msg = MsgCtx::new_from_click(&act_room, &acc);
+        let msg = MsgViewData::new_from_click(act_room.clone(), &acc);
         let mut room_chunks = RoomMsgChunks::new_from_single_msg(msg.clone());
         assert_eq!(room_chunks.last_msg(), Some(&msg));
         // room_chunks.room_id = act_room.clone();
-        let msg2 = MsgCtx::new_from_click(&act_room, &acc);
-        let msg3 = MsgCtx::new_from_click(&act_room, &acc);
+        let msg2 = MsgViewData::new_from_click(act_room.clone(), &acc);
+        let msg3 = MsgViewData::new_from_click(act_room.clone(), &acc);
         room_chunks.append_new_msg(msg2);
         room_chunks.append_new_msg(msg3.clone());
         assert_eq!(room_chunks.last_msg(), Some(&msg3));
@@ -538,7 +537,7 @@ mod tests {
         let mut msgs_vec = Vec::with_capacity(80);
         for _ in 0..80 {
             std::thread::sleep(Duration::from_millis(2));
-            let msg = MsgCtx::new_from_click(&act_room, &acc);
+            let msg = MsgViewData::new_from_click(act_room.clone(), &acc);
             msgs_vec.push(msg);
         }
         // let len = msgs_vec.len();
@@ -585,7 +584,7 @@ mod tests {
         let mut msgs_vec = Vec::with_capacity(80);
         for _ in 0..52 {
             std::thread::sleep(Duration::from_millis(2));
-            let msg = MsgCtx::new_from_click(&act_room, &acc);
+            let msg = MsgViewData::new_from_click(act_room.clone(), &acc);
             msgs_vec.push(msg);
         }
         let len = msgs_vec.len();

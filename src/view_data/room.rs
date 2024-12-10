@@ -7,29 +7,30 @@ use floem::{prelude::*, ViewId};
 use tracing_lite::{debug, trace, warn};
 use ulid::Ulid;
 
-use crate::cont::msg::MsgEdit;
-use crate::util::Tb;
-use crate::views::chunks::RoomMsgChunks;
-use crate::common::CommonData;
 use crate::cont::acc::Account;
+use crate::util::{Id, Tb};
+use crate::common::CommonData;
+use crate::views::chunks::RoomMsgChunks;
 use crate::views::msg::MsgCtx;
-use crate::util::Id;
+use crate::views::msgs::RoomMsgUpt;
 use crate::views::room::ROOM_IDX;
 
+use super::msg::MsgViewData;
 use super::session::APP;
 use super::MsgEvent;
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Main structure containing all data needed for room view and msgs view.
 pub struct RoomViewData {
     pub view_id: ViewId,
     pub room_id: Id,
     pub room_idx: RoomTabIdx,
+    pub get_update: RwSignal<RoomMsgUpt>,
     // pub is_selected: RwSignal<bool>,
     pub owner: Account,
     pub members: HashMap<Ulid, Account>,
-    pub last_msg: RwSignal<Option<MsgCtx>>,
+    pub last_msg: RwSignal<Option<MsgViewData>>,
     pub msgs: RwSignal<RoomMsgChunks>,
     pub unread: RwSignal<bool>,
     pub num_unread: RwSignal<u16>,
@@ -39,26 +40,31 @@ pub struct RoomViewData {
 
 impl RoomViewData {
     pub fn new_from_click() -> Self {
+        let cx = APP.with(|app| app.provide_scope());
         let acc = if let Some(acc) = Account::new_from_click() {
             acc
         } else {
-            APP.with(|gs| gs.accounts.with_untracked(|accs|
+            APP.with(|app| app.accounts.with_untracked(|accs|
                 accs.values().next().unwrap().clone()
             ))
         };
         let id = Id::new(Tb::Room);
+        let msgs = cx.create_rw_signal(RoomMsgChunks::new(id.clone()));
+        let msgs_id = SignalGet::id(&msgs);
+        println!("ROOM MSGS SIGNAL ID: {msgs_id:#?}");
         Self {
             room_idx: RoomTabIdx::new(id.id),
-            msgs: RwSignal::new(RoomMsgChunks::new(id.clone())),
-            num_unread: RwSignal::new(0),
-            unread: RwSignal::new(false),
-            description: RwSignal::new(None),
+            msgs,
+            num_unread: cx.create_rw_signal(0),
+            unread: cx.create_rw_signal(false),
+            description: cx.create_rw_signal(None),
             owner: acc,
             members: HashMap::new(),
             view_id: ViewId::new(),
             room_id: id,
-            last_msg: RwSignal::new(None),
+            last_msg: cx.create_rw_signal(None),
             common_data: APP.with(|gs| gs.common_data.clone()),
+            get_update: cx.create_rw_signal(RoomMsgUpt::NoUpdate)
             // is_selected: RwSignal::new(false)
         }
     }
@@ -66,6 +72,17 @@ impl RoomViewData {
     /// Return room index value.
     pub fn idx(&self) -> usize {
         self.room_idx.idx
+    }
+
+    /// Update `last_msg` field on Self fetching msg from chunks using msg id.
+    pub fn update_last_msg(&mut self) {
+        self.msgs.with_untracked(|msgs| {
+            if let Some(msg) = msgs.last_msg() {
+                self.last_msg.set(Some(msg.clone()));
+            } else {
+                warn!("fn: update_last_msg: unable to update `last_msg` field");
+            }
+        })
     }
 }
 
@@ -89,6 +106,11 @@ impl RoomTabIdx {
             id: room_id
         }
     }
+
+    /// Recreate full room id from Ulid.
+    pub fn id(&self) -> Id {
+        Id { tb: Tb::Room, id: self.id }
+    }
 }
 
 
@@ -103,43 +125,53 @@ impl IntoView for RoomViewData {
         let active = APP.with(|a| a.active_room);
         let is_selected = RwSignal::new(false);
         let last_msg = self.last_msg;
-        let _msgs = self.msgs;
+        let msgs = self.msgs;
+        let get_upt = self.get_update;
 
+        
         let need_avatar_change = Trigger::new();
         let need_label_change = Trigger::new();
         let need_text_change = Trigger::new();
+        let need_last_msg_upt = Trigger::new();
         // -- Receive last upt from the app and evaluate if there is a need for un update
-        let msg_update = use_context::<RwSignal<MsgEvent>>().unwrap();
-
-        // // -- De-select if active room changed
-        // create_effect(move |_| {
-        //     debug!("effect: de-select if active room changed");
-        //     match active.get() {
-        //         Some(act) => {
-        //             if act.id != this_room {
-        //                 // is_selected.set(false);
-        //             }
-        //         },
-        //         None => {}
-        //     }
-        // });
-
-        // -- last msg effect
+        
         create_effect(move |_| {
-            match msg_update.get() {
-                MsgEvent::NewFor(r) if r == this_room => {
+            need_last_msg_upt.track();
+            debug!("== effect(room_into_view): need_last_msg_upt");
+            msgs.with_untracked(|msgs| {
+                if let Some(msg) = msgs.last_msg() {
+                    self.last_msg.set(Some(msg.clone()));
                     batch(|| {
                         need_avatar_change.notify();
                         need_label_change.notify();
                         need_text_change.notify();
-                    });
-                },
-                MsgEvent::UpdatedFor { msg, room } if room == this_room => {
+                    })
+                } else {
+                    warn!("fn: update_last_msg: unable to update `last_msg` field");
+                }
+            });
+        });
+        
+        // -- Evaluate room event and decide if repaint is needed (TODO)
+        create_effect(move |_| {
+            debug!("== effect(room_view_data): msg event");
+            match get_upt.get() {
+                RoomMsgUpt::New => {
+                    trace!("effect | room_view_data | get_update: New");
+                    need_last_msg_upt.notify();
+                }
+                RoomMsgUpt::Changed(msg) => {
                     last_msg.with_untracked(|lm| {
                         if let Some(last_msg) = lm {
                             if last_msg.id.id == msg {
                                 need_text_change.notify();
                             }
+                        } else {
+                            msgs.with_untracked(|msgs| {
+                                if let Some(msg) = msgs.find_msg(msg) {
+                                    // TODO: system of notification icons/marks
+                                }
+                            })
                         }
                     })
                 },
@@ -240,17 +272,17 @@ impl IntoView for RoomViewData {
                 // is_selected.set(true);
                 let need_upt = match active.get_untracked() {
                     Some(id) if id.id == self.room_id.id => {
-                        trace!("effect: select_room: is Some({})", id.id);
+                        trace!("effect: select_room: already selected: Some({})", id.idx);
                         // false
                     },
                     Some(id) => {
-                        trace!("effect: select_room: new room selected: {}", id.id);
+                        trace!("effect: select_room: new room selected: {}", self.room_idx.idx);
                         active.set(Some(self.room_idx.clone()));
                         // msg_view.set(MsgView::NewMsg(room.id.clone()));
                         // is_selected.set(false);
                     },
                     None => {
-                        warn!("effect: select_room fetched active_room is None, selecting current..");
+                        warn!("effect: select_room: fetched active_room is None, selecting current: {}", self.room_idx.idx);
                         active.set(Some(self.room_idx.clone()));
                         // is_selected.set(true);
                     }

@@ -2,11 +2,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::cell::LazyCell;
 use std::rc::Rc;
 
-use floem::reactive::create_memo;
+use floem::reactive::{create_memo, Scope};
 use floem::ViewId;
 use floem::{prelude::*, reactive::Memo};
 use ulid::Ulid;
 
+use crate::views::msgs::RoomMsgUpt;
 use crate::{common::CommonData, cont::acc::Account};
 use super::room::{RoomTabIdx, RoomViewData};
 
@@ -25,9 +26,9 @@ pub struct UISession {
     /// List of all users.
     pub accounts: RwSignal<HashMap<Ulid, Account>>,
     /// List of all user rooms.
-    pub rooms: RwSignal<HashMap<usize, RwSignal<RoomViewData>>>,
+    pub rooms: RwSignal<BTreeMap<usize, RoomViewData>>,
     /// Extra data regarding rooms: index and ViewId.
-    pub rooms_tabs: RwSignal<HashMap<Ulid, (usize, ViewId)>>,
+    pub rooms_tabs: RwSignal<HashMap<Ulid, (usize, ViewId, RwSignal<RoomMsgUpt>)>>,
     pub rooms_tabs_count: Memo<usize>,
     /// An active room (if any).
     pub active_room: RwSignal<Option<RoomTabIdx>>,
@@ -36,20 +37,29 @@ pub struct UISession {
     pub common_data: Rc<CommonData>,
     // /// Stores info what range of its msgs is loaded.
     // pub active_room_msgs_data: RwSignal<RoomMsgChunks>,
+    pub scope: Scope
 }
 
 
 impl UISession {
     pub fn new() -> Self {
+        let cx = Scope::new();
+        println!("UISession scope: {cx:#?}");
         let user = Rc::new(Account::new_from_click().unwrap());
         Self {
             user,
-            accounts: RwSignal::new(HashMap::new()),
-            rooms: RwSignal::new(HashMap::new()),
-            rooms_tabs: RwSignal::new(HashMap::new()),
-            rooms_tabs_count: create_memo(|_| 0),
-            active_room: RwSignal::new(None),
-            common_data: Rc::new(CommonData::default())
+            accounts: cx.create_rw_signal(HashMap::new()),
+            rooms: cx.create_rw_signal(BTreeMap::new()),
+            rooms_tabs: cx.create_rw_signal(HashMap::new()),
+            rooms_tabs_count: cx.create_memo(|_| 0),
+            active_room: cx.create_rw_signal(None),
+            common_data: Rc::new(CommonData::default()),
+            scope: cx
         }
+    }
+
+    /// Returns scope related with [UISession] liftime.
+    pub fn provide_scope(&self) -> Scope {
+        self.scope
     }
 }

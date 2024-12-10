@@ -21,9 +21,9 @@ pub struct MsgCtx {
     pub author: Rc<Account>,
     pub room: Id,
     pub room_owner: bool,
+    pub msg: Rc<Msg>,
     pub com: RwSignal<Option<Vec<ComCtx>>>,
     pub rea: RwSignal<Option<Vec<ReaCtx>>>,
-    pub msg: Rc<Msg>
 }
 
 impl MsgCtx {

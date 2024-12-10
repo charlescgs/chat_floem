@@ -24,9 +24,11 @@ use im::vector;
 use tracing_lite::{debug, error, info, trace, warn, Level, Subscriber};
 use ulid::Ulid;
 use util::{Id, Tb};
+use view_data::msg::MsgViewData;
 use view_data::MsgEvent;
 use views::chunks::RoomMsgChunks;
 use views::msg::MsgCtx;
+use views::msgs::msgs_view_v2;
 // use views::msgs_view::main_msg_view;
 use views::room::{RoomCtx, ROOM_IDX};
 use views::rooms::rooms_view_v2;
@@ -44,6 +46,7 @@ pub mod cont {
 pub mod util;
 pub mod views {
     pub mod msg;
+    pub mod msgs;
     pub mod msgs_view;
     pub mod room;
     pub mod rooms;
@@ -124,8 +127,8 @@ fn app_view_grid() -> impl IntoView {
     stack((
         toolbar_view_v2(),
         rooms_view_v2(),
-        // msgs_view(),
-        tab_msgs_view(new_msg_scroll_end),
+        msgs_view_v2(),
+        // tab_msgs_view(new_msg_scroll_end),
         text_editor_view(send_msg, new_msg_scroll_end),
         editor_toolbar_view(send_msg),
     ))
@@ -273,7 +276,7 @@ fn tab_msgs_view(_new_msg_scroll_end: Trigger) -> impl IntoView {
                     state2.get_room_idx(&id.id)
                 },
                 None => {
-                    trace!("tab: active_fn: None =0");
+                    trace!("tab: active_fn: None = 0");
                     0
                 }
             }},
@@ -444,7 +447,7 @@ fn text_editor_view(send_msg: Trigger, _new_msg_scroll_end: Trigger) -> impl Int
                 delivered_to_all: false,
                 viewed_by_all: false
             };
-            let new_msg = MsgCtx::new(new_msg, &msg_author, owner);
+            let new_msg = MsgViewData::new(new_msg, &msg_author, owner);
             // trace!("new_msg_text and date: {} {}", new_msg.msg.text.current, new_msg.msg.created.human_formatted());
             // state.data.with_untracked(|rooms| {
             //     if rooms

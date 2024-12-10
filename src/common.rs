@@ -3,7 +3,7 @@ use floem::ViewId;
 
 
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct CommonData {
     // focus: RwSignal<ViewId>,
     // hover: HoverData

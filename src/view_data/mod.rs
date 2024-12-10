@@ -7,7 +7,7 @@ pub mod editor;
 pub mod session;
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum MsgEvent {
     None,
     /// Brand new msg for the provided room. 
