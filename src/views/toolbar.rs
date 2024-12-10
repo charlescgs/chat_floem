@@ -71,7 +71,7 @@ pub fn toolbar_view_v2() -> impl IntoView {
                         app.rooms.update(|rooms| {
                             debug!("room: app.rooms.update");
                             if let Some(ret) = rooms.insert(room_view.idx(), room_view.clone()) {
-                                error!("value returned when attempted to insert {ret:#?}")
+                                error!("value returned when attempted to insert {}", ret.room_id)
                             }
                         });
                         app.rooms_tabs.update(|tabs| {

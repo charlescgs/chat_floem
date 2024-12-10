@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 
+use floem::event::EventListener;
+use floem::kurbo::Rect;
 use floem::peniko::Color;
 use floem::prelude::*;
 use floem::reactive::{batch, create_effect, create_memo, create_updater, use_context, Trigger};
@@ -26,9 +28,9 @@ pub enum RoomMsgUpt {
 
 
 /// This function:
-/// - [ ] organize msgs,
-/// - [ ] paint msgs,
-/// - [ ] update view on changes
+/// - [x] organize msgs,
+/// - [x] paint msgs,
+/// - [x] update view on changes
 /// - [ ] communicate with rooms
 /// - [ ] communicate with backend
 pub fn msgs_view_v2() -> impl View {
@@ -49,7 +51,6 @@ pub fn msgs_view_v2() -> impl View {
             MsgEvent::None => {
                 trace!("effect: | msgs_view | msg event: None");
                 // No event; just return previous state
-                // msg_upt.set(MsgUpt::NoUpdate);
             },
             MsgEvent::NewFor(room) => {
                 trace!("effect: | msgs_view | msg event: NewFor({room})");
@@ -107,6 +108,7 @@ pub fn msgs_view_v2() -> impl View {
             match active_room.get() {
                 Some(id) => {
                     trace!("tab: active_fn: Some({})", id.idx);
+                    scroll_to_end.notify();
                     rooms_tabs.with_untracked(|rt| rt.get(&id.id).unwrap().0)
                 },
                 None => {
@@ -123,10 +125,16 @@ pub fn msgs_view_v2() -> impl View {
                 *idx
             },
             move |(idx, room)| {
+                // -- Tab logic and state
                 let get_upt = room.get_update;
                 let mut room_chunks = room.msgs;
                 // let x = create_updater(compute, on_change);
-                let mut msgs_vec = RwSignal::new(Vector::new());
+                let msgs_count = room.msgs_count;
+                // let cx = APP.with(|app| app.provide_scope());
+                let msgs_vec = RwSignal::new(Vector::new());
+                let scroll_rect = RwSignal::new(Rect::ZERO);
+                let load_more = Trigger::new();
+
                 room_chunks.with_untracked(|c|
                     if c.total_msgs != 0 {
                         batch(|| {
@@ -136,8 +144,22 @@ pub fn msgs_view_v2() -> impl View {
                         });
                     }
                 );
+
                 create_effect(move |_| {
-                    debug!("== memo: msgs tab({idx})");
+                    debug!("== effect: msgs load_more");
+                    load_more.track();
+                    room_chunks.with_untracked(|c| {
+                        let chunks = c.load_next();
+                        if !chunks.is_empty() {
+                            for chunk in chunks {
+                                msgs_vec.update(|v| v.append(chunk.msgs.clone()));
+                            }
+                        }
+                    });
+                });
+                
+                create_effect(move |_| {
+                    debug!("== effect: msgs tab({idx})");
                     match get_upt.get() {
                         RoomMsgUpt::NoUpdate => {},
                         RoomMsgUpt::New => {
@@ -145,6 +167,7 @@ pub fn msgs_view_v2() -> impl View {
                                 debug!("RoomMsgUpt: {idx} with new msg: {}", new_msg.id.id);
                                 msgs_vec.update(|v| v.push_back(new_msg));
                                 println!("msgs vector len: {}", msgs_vec.with_untracked(|v| v.len()));
+                                scroll_to_end.notify();
                             } else {
                                 warn!("RoomMsgUpt: {idx} last msg fn returned None")
                             }
@@ -163,9 +186,9 @@ pub fn msgs_view_v2() -> impl View {
                             if let Some(del_msg) = msgs_vec.with_untracked(|v| v.iter().find(|m| &m.id.id == msg_id).cloned()) {
                                 let del_idx_found =
                                     if let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&del_msg)) {
-                                    del_idx = idx;
-                                    debug!("RoomMsgUpt: {idx} with {}", del_msg.id.id);
-                                    true
+                                        del_idx = idx;
+                                        debug!("RoomMsgUpt: {idx} with {}", del_msg.id.id);
+                                        true
                                     } else {
                                         false
                                     };
@@ -221,18 +244,21 @@ pub fn msgs_view_v2() -> impl View {
                         .handle_thickness(6.)
                         .shrink_to_fit()
                     )
-                    // .scroll_to_percent(move || {
-                    //     trace!("scroll_to_percent");
-                    //     new_msg_scroll_end.track();
-                    //     100.0
-                    // })
-                    // .on_scroll(move |rect| {
-                    //     if rect.y0 == 0.0 {
-                    //         debug!("on_scroll: load_more notified!");
-                    //         msg_view.set(MsgView::LoadMore(rect));
-                    //         load_more.notify();
-                    //     }
-                    // })
+                    .scroll_to_percent(move || {
+                        scroll_to_end.track();
+                        trace!("dyn_stack: msg: scroll_to_end notified");
+                        // scroll_rect.get()
+                        100.0
+                    })
+                    .on_scroll(move |rect| {
+                        if msgs_count.get() > 20 {
+                            // scroll_rect.set(rect);
+                            if rect.y0 == 0.0 {
+                                trace!("dyn_stack: msg: on_scroll: load_more notified!");
+                                load_more.notify();
+                            }
+                        }
+                    })
             }
         ).debug_name("msgs tabs")
         .style(|s| s.size_full())

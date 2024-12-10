@@ -50,7 +50,6 @@ impl UISession {
         while let Some(acc) = Account::new_from_click() {
             accs.push(acc);
         }
-        println!("UISession accs len: {}", accs.len());
         let user = Rc::new(accs.remove(0));
         Self {
             user,

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
-use floem::reactive::{batch, create_effect, use_context, Trigger};
+use floem::reactive::{batch, create_effect, create_memo, use_context, Memo, Trigger};
 use floem::{prelude::*, ViewId};
 use tracing_lite::{debug, trace, warn};
 use ulid::Ulid;
@@ -20,14 +20,14 @@ use super::session::APP;
 use super::MsgEvent;
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 /// Main structure containing all data needed for room view and msgs view.
 pub struct RoomViewData {
     pub view_id: ViewId,
     pub room_id: Id,
     pub room_idx: RoomTabIdx,
     pub get_update: RwSignal<RoomMsgUpt>,
-    // pub is_selected: RwSignal<bool>,
+    pub msgs_count: Memo<u16>,
     pub owner: Account,
     pub members: HashMap<Ulid, Account>,
     pub last_msg: RwSignal<Option<MsgViewData>>,
@@ -50,6 +50,10 @@ impl RoomViewData {
         });
         let id = Id::new(Tb::Room);
         let msgs = cx.create_rw_signal(RoomMsgChunks::new(id.clone()));
+        let msgs_count = cx.create_memo(move |_| {
+            trace!("== memo(room msgs count)");
+            msgs.with(|c| c.total_msgs)
+        });
         let msgs_id = SignalGet::id(&msgs);
         println!("ROOM MSGS SIGNAL ID: {msgs_id:#?}");
         Self {
@@ -64,8 +68,8 @@ impl RoomViewData {
             room_id: id,
             last_msg: cx.create_rw_signal(None),
             common_data: APP.with(|gs| gs.common_data.clone()),
-            get_update: cx.create_rw_signal(RoomMsgUpt::NoUpdate)
-            // is_selected: RwSignal::new(false)
+            get_update: cx.create_rw_signal(RoomMsgUpt::NoUpdate),
+            msgs_count
         }
     }
 
@@ -96,11 +100,6 @@ pub struct RoomTabIdx {
 impl RoomTabIdx {
     /// Because it's used only during room creation, new atomic index can be fetched.
     pub fn new(room_id: Ulid) -> Self {
-        // let idx = APP.with(|gs|
-        //     gs.rooms_tabs.with_untracked(|tabs|
-        //         tabs.get(&room_id).cloned().unwrap_or_default(0)
-        //     ).0
-        // );
         Self {
             idx: ROOM_IDX.fetch_add(1, Ordering::Relaxed),
             id: room_id
@@ -117,8 +116,8 @@ impl RoomTabIdx {
 impl IntoView for RoomViewData {
     type V = floem::AnyView;
 
-    /// - [ ] Selectable as a room
-    /// - [ ] Tracks and updates last msg status
+    /// - [x] Selectable as a room
+    /// - [x] Tracks and updates last msg status
     ///     - [ ] updates it in fine-grained way
     fn into_view(self) -> Self::V {
         let this_room = self.room_id.id;
@@ -127,14 +126,12 @@ impl IntoView for RoomViewData {
         let last_msg = self.last_msg;
         let msgs = self.msgs;
         let get_upt = self.get_update;
-
-        
         let need_avatar_change = Trigger::new();
         let need_label_change = Trigger::new();
         let need_text_change = Trigger::new();
         let need_last_msg_upt = Trigger::new();
+
         // -- Receive last upt from the app and evaluate if there is a need for un update
-        
         create_effect(move |_| {
             need_last_msg_upt.track();
             debug!("== effect(room_into_view): need_last_msg_upt");
@@ -254,7 +251,7 @@ impl IntoView for RoomViewData {
         main_view
             .container()
             .debug_name("outer_main_room")
-            .style(move |s| s // needs to be 'move', right?
+            .style(move |s| s
                 .max_width(200.)
                 .padding(2.)
                 .max_height(100.)
@@ -268,29 +265,19 @@ impl IntoView for RoomViewData {
             )
             .on_click_stop(move |_| {
                 // -- If this room is not selected, select it
-                // active.set(Some(RoomTabIdx::new(this_room)));
-                // is_selected.set(true);
                 let need_upt = match active.get_untracked() {
                     Some(id) if id.id == self.room_id.id => {
                         trace!("effect: select_room: already selected: Some({})", id.idx);
-                        // false
                     },
                     Some(id) => {
                         trace!("effect: select_room: new room selected: {}", self.room_idx.idx);
                         active.set(Some(self.room_idx.clone()));
-                        // msg_view.set(MsgView::NewMsg(room.id.clone()));
-                        // is_selected.set(false);
                     },
                     None => {
                         warn!("effect: select_room: fetched active_room is None, selecting current: {}", self.room_idx.idx);
                         active.set(Some(self.room_idx.clone()));
-                        // is_selected.set(true);
                     }
                 };
-                // if need_upt {
-                //     // TODO: notify msgs
-                //     is_selected.set(true);
-                // }
             })
             .into_any()
     }
