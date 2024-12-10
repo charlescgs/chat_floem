@@ -7,6 +7,7 @@ use chrono_lite::Datetime;
 use floem::prelude::*;
 use floem::ViewId;
 use im::{vector, Vector};
+use tracing_lite::info;
 
 use crate::cont::msg::Text;
 use crate::util::{Id, Tb};
@@ -93,6 +94,7 @@ impl IntoView for MsgViewData {
     type V = floem::AnyView;
     
     fn into_view(self) -> Self::V {
+        info!("->> into_view(msg) | {}", self.id.id);
         let text = self.msg.text.current.clone();
         let time = self.msg.created.clone();
         let author = self.author.username.clone();

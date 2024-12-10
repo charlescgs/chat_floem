@@ -1,6 +1,8 @@
+use std::cell::RefCell;
+
 use floem::peniko::Color;
 use floem::prelude::*;
-use floem::reactive::{create_effect, create_memo, use_context, Trigger};
+use floem::reactive::{batch, create_effect, create_memo, create_updater, use_context, Trigger};
 use floem::taffy::prelude::TaffyGridLine;
 use floem::taffy::{AlignItems, FlexDirection, GridPlacement, Line};
 use floem::views::{dyn_stack, stack, tab, Decorators, ScrollExt};
@@ -8,6 +10,7 @@ use tracing_lite::{debug, info, trace, warn};
 use im::Vector;
 use ulid::Ulid;
 
+use crate::view_data::msg::MsgViewData;
 use crate::view_data::session::APP;
 use crate::view_data::MsgEvent;
 
@@ -122,50 +125,74 @@ pub fn msgs_view_v2() -> impl View {
             move |(idx, room)| {
                 let get_upt = room.get_update;
                 let mut room_chunks = room.msgs;
-                let msgs_memo = create_memo(move |_| {
+                // let x = create_updater(compute, on_change);
+                let mut msgs_vec = RwSignal::new(Vector::new());
+                room_chunks.with_untracked(|c|
+                    if c.total_msgs != 0 {
+                        batch(|| {
+                            for each in c.reload() {
+                                msgs_vec.update(|v| v.append(each.msgs.clone()));
+                            }
+                        });
+                    }
+                );
+                create_effect(move |_| {
                     debug!("== memo: msgs tab({idx})");
-                    let mut msgs = Vector::new();
                     match get_upt.get() {
-                        RoomMsgUpt::NoUpdate => msgs,
+                        RoomMsgUpt::NoUpdate => {},
                         RoomMsgUpt::New => {
                             if let Some(new_msg) = room.last_msg.get_untracked() {
                                 debug!("RoomMsgUpt: {idx} with new msg: {}", new_msg.id.id);
-                                msgs.push_back(new_msg);
+                                msgs_vec.update(|v| v.push_back(new_msg));
+                                println!("msgs vector len: {}", msgs_vec.with_untracked(|v| v.len()));
                             } else {
                                 warn!("RoomMsgUpt: {idx} last msg fn returned None")
                             }
-                            msgs
+                            // msgs
                         },
                         RoomMsgUpt::Changed(msg_id) => {
                             if let Some(changed_msg) = room_chunks.with_untracked(|rc| rc.find_msg(msg_id).cloned()) {
-                                if let Some(idx) = msgs.index_of(&changed_msg) {
-                                    debug!("RoomMsgUpt: {idx} with upt msg: {}", changed_msg.id.id);
-                                    msgs.update(idx, changed_msg);
-                                }
+                                let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&changed_msg)) else { return };
+                                debug!("RoomMsgUpt: {idx} with upt msg: {}", changed_msg.id.id);
+                                msgs_vec.update(|v| { v.update(idx, changed_msg); });
                             }
-                            msgs
+                            // msgs
                         },
                         RoomMsgUpt::Deleted(ref msg_id) => {
-                            if let Some(del_msg) = msgs.iter().find(|m| &m.id.id == msg_id) {
-                                if let Some(idx) = msgs.index_of(del_msg) {
+                            let mut del_idx = 0;
+                            if let Some(del_msg) = msgs_vec.with_untracked(|v| v.iter().find(|m| &m.id.id == msg_id).cloned()) {
+                                let del_idx_found =
+                                    if let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&del_msg)) {
+                                    del_idx = idx;
                                     debug!("RoomMsgUpt: {idx} with {}", del_msg.id.id);
-                                    msgs.remove(idx);
+                                    true
+                                    } else {
+                                        false
+                                    };
+                                if del_idx_found {
+                                    msgs_vec.update(|v| { v.remove(del_idx); });
                                 }
                             }
-                            msgs
-                        },
+                            // msgs
+                        }
                     }
                 });
                 
                 dyn_stack(
                     move || {
-                        let chunks = msgs_memo.get();
-                        info!("->> msg fn ({} msgs)", chunks.len());
-                        chunks.into_iter().rev().enumerate()
+                        let chunks = msgs_vec.get();
+                        info!("->> dyn_stack: msg(each_fn) (with {} msg/s)", chunks.len());
+                        for each in chunks.iter() {
+                            println!("{}", each.id)
+                        }
+                        chunks.into_iter().enumerate()
                     },
-                    |(idx, _)| *idx,
+                    |(idx, msg)| {
+                        info!("dyn_stack: msg(key_fn) for {}", msg.id.id);
+                        *idx
+                    },
                     |(_, msg)| {
-                        trace!("dyn_stack: msg (view_fn): {}", msg.id);
+                        trace!("dyn_stack: msg(view_fn): {}", msg.id);
                         let id = msg.id.id.0;
                         // let _is_owner = msg.room_owner;
                         msg
@@ -177,7 +204,7 @@ pub fn msgs_view_v2() -> impl View {
                         }
                     ).debug_name("msgs list")
                     .style(|s| s
-                        .flex_direction(FlexDirection::ColumnReverse)
+                        .flex_direction(FlexDirection::Column)
                         .width_full()
                         .align_items(AlignItems::Start)
                         .column_gap(5.)
