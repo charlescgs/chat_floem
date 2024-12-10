@@ -365,11 +365,22 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 name = "chat_floem"
 version = "0.0.0"
 dependencies = [
+ "chat_util",
  "chrono-lite",
  "floem",
  "im",
  "serde",
  "serde_json",
+ "tracing-lite",
+ "ulid",
+]
+
+[[package]]
+name = "chat_util"
+version = "0.4.3"
+dependencies = [
+ "fastrand",
+ "serde",
  "tracing-lite",
  "ulid",
 ]

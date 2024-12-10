@@ -41,13 +41,13 @@ pub struct RoomViewData {
 impl RoomViewData {
     pub fn new_from_click() -> Self {
         let cx = APP.with(|app| app.provide_scope());
-        let acc = if let Some(acc) = Account::new_from_click() {
-            acc
-        } else {
-            APP.with(|app| app.accounts.with_untracked(|accs|
-                accs.values().next().unwrap().clone()
-            ))
-        };
+        let mut accs_list = Vec::new();
+        APP.with(|app| {
+            app.accounts.with_untracked(|accs|
+                accs_list = accs.values().cloned().collect::<Vec<Account>>()
+            );
+            accs_list.push(app.user.as_ref().clone());
+        });
         let id = Id::new(Tb::Room);
         let msgs = cx.create_rw_signal(RoomMsgChunks::new(id.clone()));
         let msgs_id = SignalGet::id(&msgs);
@@ -58,8 +58,8 @@ impl RoomViewData {
             num_unread: cx.create_rw_signal(0),
             unread: cx.create_rw_signal(false),
             description: cx.create_rw_signal(None),
-            owner: acc,
-            members: HashMap::new(),
+            owner: accs_list.remove(0),
+            members: HashMap::from_iter(accs_list.into_iter().map(|acc | (acc.acc_id.id, acc))),
             view_id: ViewId::new(),
             room_id: id,
             last_msg: cx.create_rw_signal(None),

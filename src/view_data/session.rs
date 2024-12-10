@@ -7,6 +7,7 @@ use floem::ViewId;
 use floem::{prelude::*, reactive::Memo};
 use ulid::Ulid;
 
+use crate::cont::acc;
 use crate::views::msgs::RoomMsgUpt;
 use crate::{common::CommonData, cont::acc::Account};
 use super::room::{RoomTabIdx, RoomViewData};
@@ -45,10 +46,15 @@ impl UISession {
     pub fn new() -> Self {
         let cx = Scope::new();
         println!("UISession scope: {cx:#?}");
-        let user = Rc::new(Account::new_from_click().unwrap());
+        let mut accs = Vec::with_capacity(3);
+        while let Some(acc) = Account::new_from_click() {
+            accs.push(acc);
+        }
+        println!("UISession accs len: {}", accs.len());
+        let user = Rc::new(accs.remove(0));
         Self {
             user,
-            accounts: cx.create_rw_signal(HashMap::new()),
+            accounts: cx.create_rw_signal(HashMap::from_iter(accs.into_iter().map(|acc| (acc.acc_id.id, acc)))),
             rooms: cx.create_rw_signal(BTreeMap::new()),
             rooms_tabs: cx.create_rw_signal(HashMap::new()),
             rooms_tabs_count: cx.create_memo(|_| 0),

@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::thread::sleep;
 use std::time::Duration;
 
+use chat_util::gen::{gen_u64, gen_u64_in_range};
 use floem::prelude::*;
 use floem::menu::{Menu, MenuItem};
 use floem::reactive::{batch, SignalRead};
@@ -92,10 +93,14 @@ pub fn toolbar_view_v2() -> impl IntoView {
                             // -- Get or create account (only in early faze)
                             let acc = {
                                 let room = rooms.get(&active.idx).unwrap();
-                                if room.members.is_empty() {
+                                let rand = gen_u64_in_range(0..3);
+                                if rand == 0 {
                                     room.owner.clone()
                                 } else {
-                                    room.members.values().next().unwrap().clone()
+                                    let keys_vec = room.members.keys().cloned().collect::<Vec<_>>();
+                                    println!("key_vec len: {}", keys_vec.len());
+                                    let key = keys_vec.get(rand as usize - 1).cloned().unwrap();
+                                    room.members.get(&key).unwrap().clone()
                                 }
                             };
                             // -- Create msg
@@ -116,9 +121,10 @@ pub fn toolbar_view_v2() -> impl IntoView {
             },
             NewList::Account => {
                 trace!("Clicked NewList::Account");
-                let state = use_context::<Rc<ChatState>>().unwrap();
                 if let Some(acc) = Account::new_from_click() {
-                    state.accounts.update(|accs| { accs.insert(acc.acc_id.id.clone(), acc); })
+                    APP.with(|app| {
+                        app.accounts.update(|accs| { accs.insert(acc.acc_id.id.clone(), acc); })
+                    })
                 }
             }
         }
