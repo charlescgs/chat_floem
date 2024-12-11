@@ -1,10 +1,8 @@
-use std::cell::RefCell;
+use std::time::Duration;
 
-use floem::event::EventListener;
-use floem::kurbo::Rect;
 use floem::peniko::Color;
 use floem::prelude::*;
-use floem::reactive::{batch, create_effect, create_memo, create_updater, use_context, Trigger};
+use floem::reactive::{create_effect, use_context, Trigger};
 use floem::taffy::prelude::TaffyGridLine;
 use floem::taffy::{AlignItems, FlexDirection, GridPlacement, Line};
 use floem::views::{dyn_stack, stack, tab, Decorators, ScrollExt};
@@ -12,9 +10,9 @@ use tracing_lite::{debug, info, trace, warn};
 use im::Vector;
 use ulid::Ulid;
 
-use crate::view_data::msg::MsgViewData;
 use crate::view_data::session::APP;
-use crate::view_data::MsgEvent;
+use crate::view_data::{trigger_debounce_action, MsgEvent};
+use crate::views::chunks::DisplayChunks;
 
 
 
@@ -40,7 +38,6 @@ pub fn msgs_view_v2() -> impl View {
     let rooms = APP.with(|app| app.rooms);
     let active_room = APP.with(|app| app.active_room);
     let rooms_tabs = APP.with(|app| app.rooms_tabs);
-    let scroll_to_end = Trigger::new();
 
     // -- Effect and derives needed for the view
 
@@ -76,31 +73,6 @@ pub fn msgs_view_v2() -> impl View {
             },
         } 
     });
-
-    // let room_msgs = create_memo(move |_| -> Vector<MsgViewData> {
-    //     let mut msgs = Vector::new();
-    //     // let room_msgs = move || -> Vector<MsgViewData> {
-    //     match msg_upt.get() {
-    //         MsgUpt::NoUpdate => msgs,
-    //         MsgUpt::New(ref idx) => {
-    //             rooms.with_untracked(|r| {
-    //                 match r.get(idx) {
-    //                     Some(room) => {
-    //                         let Some(new_msg) = room.last_msg.get_untracked() else {
-    //                             return msgs
-    //                         };
-    //                         msgs.push_back(new_msg);
-    //                         msgs
-    //                     },
-    //                     None => msgs
-    //                 }
-    //             })
-    //         },
-    //         MsgUpt::Changed(ulid) => todo!(),
-    //         MsgUpt::Deleted(ulid) => todo!(),
-    //     }
-    // });
-
     
     // -- View stack
     stack((
@@ -108,8 +80,9 @@ pub fn msgs_view_v2() -> impl View {
             match active_room.get() {
                 Some(id) => {
                     trace!("tab: active_fn: Some({})", id.idx);
-                    scroll_to_end.notify();
-                    rooms_tabs.with_untracked(|rt| rt.get(&id.id).unwrap().0)
+                    // scroll_to_end.notify();
+                    // rooms_tabs.with_untracked(|rt| rt.get(&id.id).unwrap().0)
+                    id.idx
                 },
                 None => {
                     trace!("tab: active_fn: None = 0");
@@ -125,36 +98,44 @@ pub fn msgs_view_v2() -> impl View {
                 *idx
             },
             move |(idx, room)| {
+                let scroll_to_end = Trigger::new();
                 // -- Tab logic and state
                 let get_upt = room.get_update;
-                let mut room_chunks = room.msgs;
+                // -- Room messages
+                let room_chunks = room.msgs;
                 // let x = create_updater(compute, on_change);
                 let msgs_count = room.msgs_count;
                 // let cx = APP.with(|app| app.provide_scope());
                 let msgs_vec = RwSignal::new(Vector::new());
-                let scroll_rect = RwSignal::new(Rect::ZERO);
+                // let scroll_rect = RwSignal::new(Point::ZERO);
+                let is_active = room.is_active;
                 let load_more = Trigger::new();
-
-                room_chunks.with_untracked(|c|
-                    if c.total_msgs != 0 {
-                        batch(|| {
-                            for each in c.reload() {
-                                msgs_vec.update(|v| v.append(each.msgs.clone()));
-                            }
-                        });
-                    }
-                );
+                let room_idx = room.idx();
+                // -- Tracks how many chunks is in this room
+                let chunks_on_display = RwSignal::new(DisplayChunks::default());
 
                 create_effect(move |_| {
-                    debug!("== effect: msgs load_more");
-                    load_more.track();
-                    room_chunks.with_untracked(|c| {
-                        let chunks = c.load_next();
-                        if !chunks.is_empty() {
-                            for chunk in chunks {
-                                msgs_vec.update(|v| v.append(chunk.msgs.clone()));
-                            }
+                    trace!("== effect: scroll end on tab switch for {room_idx}");
+                    is_active.with(|cell| {
+                        if cell.get() == true {
+                            scroll_to_end.notify();
                         }
+                    });
+                });
+
+                create_effect(move |_| {
+                    trigger_debounce_action(load_more, Duration::from_millis(500), move || {
+                        room_chunks.with_untracked(|chunks| {
+                            debug!("== effect(with debounce): load_more msgs");
+                            // -- Only load next chunk if more left
+                            if msgs_count.get_untracked() < chunks.total_msgs {
+                                let chunk = chunks.load_only_next();
+                                if !chunk.is_empty() {
+                                    trace!("== effect(with debounce): loaded next chunk");
+                                    msgs_vec.update(|v| v.append(chunk[0].msgs.clone()));
+                                }
+                            }
+                        });
                     });
                 });
                 
@@ -177,7 +158,7 @@ pub fn msgs_view_v2() -> impl View {
                             if let Some(changed_msg) = room_chunks.with_untracked(|rc| rc.find_msg(msg_id).cloned()) {
                                 let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&changed_msg)) else { return };
                                 debug!("RoomMsgUpt: {idx} with upt msg: {}", changed_msg.id.id);
-                                msgs_vec.update(|v| { v.update(idx, changed_msg); });
+                                msgs_vec.update(|v| { let _ = v.update(idx, changed_msg); });
                             }
                             // msgs
                         },
@@ -231,7 +212,6 @@ pub fn msgs_view_v2() -> impl View {
                         .width_full()
                         .align_items(AlignItems::Start)
                         .column_gap(5.)
-                        // .size_full()
                     )
                     .scroll()
                     .debug_name("msgs scroll")
@@ -244,13 +224,9 @@ pub fn msgs_view_v2() -> impl View {
                         .handle_thickness(6.)
                         .shrink_to_fit()
                     )
-                    .scroll_to_percent(move || {
-                        scroll_to_end.track();
-                        trace!("dyn_stack: msg: scroll_to_end notified");
-                        // scroll_rect.get()
-                        100.0
-                    })
                     .on_scroll(move |rect| {
+                        // println!("{:?}", rect.origin());
+                        // scroll_rect.set(rect.origin());
                         if msgs_count.get() > 20 {
                             // scroll_rect.set(rect);
                             if rect.y0 == 0.0 {
@@ -259,6 +235,14 @@ pub fn msgs_view_v2() -> impl View {
                             }
                         }
                     })
+                    .scroll_to_percent(move || {
+                        scroll_to_end.track();
+                        trace!("scroll_to_end notified for {}", room.idx());
+                        100.0
+                    })
+                    // .scroll_to(move || {
+                    //     // tab_focus.get()
+                    // })
             }
         ).debug_name("msgs tabs")
         .style(|s| s.size_full())

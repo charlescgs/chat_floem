@@ -1,8 +1,9 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
-use floem::reactive::{batch, create_effect, create_memo, use_context, Memo, Trigger};
+use floem::reactive::{batch, create_effect, Memo, Trigger};
 use floem::{prelude::*, ViewId};
 use tracing_lite::{debug, trace, warn};
 use ulid::Ulid;
@@ -10,14 +11,12 @@ use ulid::Ulid;
 use crate::cont::acc::Account;
 use crate::util::{Id, Tb};
 use crate::common::CommonData;
-use crate::views::chunks::RoomMsgChunks;
-use crate::views::msg::MsgCtx;
+use crate::views::chunks::{DisplayChunks, RoomMsgChunks};
 use crate::views::msgs::RoomMsgUpt;
 use crate::views::room::ROOM_IDX;
 
 use super::msg::MsgViewData;
 use super::session::APP;
-use super::MsgEvent;
 
 
 #[derive(Clone)]
@@ -26,15 +25,20 @@ pub struct RoomViewData {
     pub view_id: ViewId,
     pub room_id: Id,
     pub room_idx: RoomTabIdx,
-    pub get_update: RwSignal<RoomMsgUpt>,
-    pub msgs_count: Memo<u16>,
+
     pub owner: Account,
     pub members: HashMap<Ulid, Account>,
-    pub last_msg: RwSignal<Option<MsgViewData>>,
+    pub msgs_count: Memo<u16>,
+    pub description: RwSignal<Option<String>>,
     pub msgs: RwSignal<RoomMsgChunks>,
+    
+    pub get_update: RwSignal<RoomMsgUpt>,
+    pub chunks_on_display: RwSignal<DisplayChunks>,
+    pub is_active: RwSignal<Cell<bool>>,
+    pub last_msg: RwSignal<Option<MsgViewData>>,
     pub unread: RwSignal<bool>,
     pub num_unread: RwSignal<u16>,
-    pub description: RwSignal<Option<String>>,
+
     pub common_data: Rc<CommonData>
 }
 
@@ -69,7 +73,9 @@ impl RoomViewData {
             last_msg: cx.create_rw_signal(None),
             common_data: APP.with(|gs| gs.common_data.clone()),
             get_update: cx.create_rw_signal(RoomMsgUpt::NoUpdate),
-            msgs_count
+            msgs_count,
+            chunks_on_display: cx.create_rw_signal(DisplayChunks::default()),
+            is_active: cx.create_rw_signal(Cell::new(false))
         }
     }
 
@@ -122,7 +128,6 @@ impl IntoView for RoomViewData {
     fn into_view(self) -> Self::V {
         let this_room = self.room_id.id;
         let active = APP.with(|a| a.active_room);
-        let is_selected = RwSignal::new(false);
         let last_msg = self.last_msg;
         let msgs = self.msgs;
         let get_upt = self.get_update;
@@ -265,17 +270,21 @@ impl IntoView for RoomViewData {
             )
             .on_click_stop(move |_| {
                 // -- If this room is not selected, select it
-                let need_upt = match active.get_untracked() {
+                match active.get_untracked() {
                     Some(id) if id.id == self.room_id.id => {
                         trace!("effect: select_room: already selected: Some({})", id.idx);
+                        // APP.with(|app| app.rooms_tabs)
                     },
-                    Some(id) => {
+                    Some(_id) => {
                         trace!("effect: select_room: new room selected: {}", self.room_idx.idx);
                         active.set(Some(self.room_idx.clone()));
+                        self.is_active.update(|cell| cell.set(true));
                     },
                     None => {
                         warn!("effect: select_room: fetched active_room is None, selecting current: {}", self.room_idx.idx);
                         active.set(Some(self.room_idx.clone()));
+                        self.is_active.update(|cell| cell.set(true));
+                        // self.is_active.set(true);
                     }
                 };
             })

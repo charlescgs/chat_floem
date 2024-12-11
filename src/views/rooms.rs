@@ -1,13 +1,10 @@
 use floem::prelude::*;
-use floem::reactive::{create_effect, use_context, Trigger};
+use floem::reactive::create_effect;
 use floem::taffy::prelude::TaffyGridLine;
 use floem::taffy::{GridPlacement, Line};
-use im::Vector;
-use tracing_lite::info;
+use tracing_lite::{debug, info};
 
-use crate::view_data::room::RoomTabIdx;
 use crate::view_data::session::APP;
-use crate::view_data::MsgEvent;
 
 
 
@@ -30,13 +27,40 @@ pub fn rooms_view_v2() -> impl IntoView {
     // let room_selected = Trigger::new();
     
     // -- Effect and derives needed for the view
+    create_effect(move |_| {
+        debug!("== effect(is_active run)");
+        // active.track();
+        active.with(|act| {
+            if let Some(active) = act {
+                rooms.with_untracked(|rooms| {
+                    for (idx, room) in rooms {
+                        if *idx != active.idx {
+                            println!("changed to false: {}", room.idx());
+                            room.is_active.with_untracked(|cell| cell.set(false));
+                        }
+
+                    }
+                    // if let Some(room) = rooms.get(&active.idx) {
+                    //     room.is_active.update(|cell| {
+                    //         let val = cell.get_mut();
+                    //         println!("changed to true (previous val: {val}");
+                    //         if *val {
+                    //             error!("value was already true!");
+                    //         }
+                    //         *val = true;
+                    //     });
+                    // }
+                });
+            }
+        })
+    });
     
     // -- View stack
     stack((
         dyn_stack(
             move || rooms.get(),
             move |(id, _)| *id,
-            move |(id, room)| {
+            move |(_, room)| {
                 room
             }
         ).style(|s| s

@@ -2,12 +2,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::cell::LazyCell;
 use std::rc::Rc;
 
-use floem::reactive::{create_memo, Scope};
+use floem::reactive::Scope;
 use floem::ViewId;
 use floem::{prelude::*, reactive::Memo};
 use ulid::Ulid;
 
-use crate::cont::acc;
 use crate::views::msgs::RoomMsgUpt;
 use crate::{common::CommonData, cont::acc::Account};
 use super::room::{RoomTabIdx, RoomViewData};

@@ -1,11 +1,7 @@
-use std::rc::Rc;
-use std::thread::sleep;
-use std::time::Duration;
-
-use chat_util::gen::{gen_u64, gen_u64_in_range};
+use chat_util::gen::gen_u64_in_range;
 use floem::prelude::*;
 use floem::menu::{Menu, MenuItem};
-use floem::reactive::{batch, SignalRead};
+use floem::reactive::batch;
 use floem::reactive::create_effect;
 use floem::reactive::use_context;
 use floem::taffy::prelude::TaffyGridLine;
@@ -17,7 +13,6 @@ use crate::view_data::msg::MsgViewData;
 use crate::view_data::room::RoomViewData;
 use crate::view_data::session::APP;
 use crate::view_data::MsgEvent;
-use crate::ChatState;
 
 
 #[derive(Clone, Debug)]

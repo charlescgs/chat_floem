@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use chrono_lite::Datetime;
 use floem::{prelude::*, AnyView};
-use im::{vector, Vector};
 use tracing_lite::trace;
 
 use crate::cont::acc::Account;
@@ -130,11 +129,11 @@ impl IntoView for MsgCtx {
 
 #[derive(Clone, Debug)]
 pub struct ComCtx {
-    id: Id,
+    _id: Id,
 
 }
 
 #[derive(Clone, Debug)]
 pub struct ReaCtx {
-    id: Id,
+    _id: Id,
 }

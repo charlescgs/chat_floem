@@ -183,6 +183,48 @@ impl RoomMsgChunks {
         );
         range
     }
+
+    /// Load room chunks in range until `last_chunk_on_display` + one.
+    pub fn load_only_next(&self) -> &[MsgChunk] {
+        debug!("fn: load_next");
+        // -- Check how many chunks is loaded and return if no more left
+        if self.chunks_count == 0 {
+            trace!("fn: load_next: nothing to load");
+            return &[]
+        }
+        // -- Load another one
+        trace!("self.last_chunk_on_display: {}", self.last_chunk_on_display.get());
+        let chunk = {
+            // -- Subtract 1 from chunk_count as index starts from 0, not 1
+            let display_idx = self.last_chunk_on_display.get();
+            let chunks_count = self.chunks_count;
+            debug!("fn: load_next: {} == {}", display_idx, chunks_count);
+            // Case 1: already shown everything (display_idx == 0)
+            if display_idx == chunks_count {
+                self.last_chunk_on_display.set(display_idx.saturating_sub(1));
+                return &[]
+            }
+            // Case 2: still unloaded chunks available (display_idx < count - 1)
+            match display_idx {
+                // -- All msgs shown already
+                0 => &[],
+                // -- First chunk left to load
+                1 => {
+                    self.last_chunk_on_display.set(display_idx.saturating_sub(1));
+                    &self.chunks[..0]
+                },
+                // -- More than one chunk left unloaded
+                other => {
+                    self.last_chunk_on_display.set(display_idx.saturating_sub(1));
+                    &self.chunks[(other as usize) - 2..= (other as usize) - 2]
+                }
+            }
+        };
+        debug!("loaded data:\ntotal chunks: {}\nlast chunk msg count: {}",
+            chunk.len(), chunk.last().unwrap().count
+        );
+        chunk
+    }
     
     /// Reload loaded chunks (as a result of new/changed message).
     pub fn reload(&self) -> &[MsgChunk] {
@@ -350,6 +392,44 @@ impl MsgChunk {
         self.msgs.last()
     }
 }
+
+// MARK: DisplayCh.
+
+
+/// Structure that holds range of chunks displayed in the room.
+#[derive(Clone, Debug, Default)]
+pub struct DisplayChunks {
+    /// Oldest loaded chunk (should be lower number).
+    start: u16,
+    /// Youngest loaded chunk (should be bigger number).
+    last: u16
+}
+
+impl DisplayChunks {
+    /// Set complete range of loaded chunks.
+    pub fn set_range(&mut self, start: u16, last: u16) {
+        self.start = start;
+        self.last = last;
+    }
+    /// Older chunk was loaded (`start` field).
+    pub fn loaded_older(&mut self) {
+        let new_val = self.start.saturating_sub(1);
+        self.start = new_val;
+    }
+    
+    /// New chunk was added to the front (`last` field).
+    pub fn added_new_chunk(&mut self) {
+        let new_val = self.last.saturating_add(1);
+        self.last = new_val;
+    }
+
+    /// Deloded 1 or more old chunks.
+    pub fn deloaded_old_chunks(&mut self, no_of_deloaded: u16) {
+        self.start = no_of_deloaded;
+    }
+}
+
+
 
 
 #[cfg(test)]

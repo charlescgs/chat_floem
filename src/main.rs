@@ -1,11 +1,7 @@
 #![allow(unused)]
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Display;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
-use std::thread::sleep;
-use std::time::Duration;
 
 use chrono_lite::Datetime;
 use config::launch_with_config;
@@ -15,13 +11,12 @@ use editor::core::editor::EditType;
 use editor::core::selection::Selection;
 use editor::text::{default_light_theme, SimpleStyling};
 use floem::kurbo::Rect;
-use floem::menu::{Menu, MenuItem};
 use floem::prelude::*;
-use floem::reactive::{batch, create_effect, provide_context, use_context, SignalRead, Trigger};
+use floem::reactive::{create_effect, provide_context, use_context, SignalRead, Trigger};
 use floem::taffy::prelude::{minmax, TaffyGridLine};
-use floem::taffy::{AlignContent, AlignItems, FlexDirection, GridPlacement, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
+use floem::taffy::{AlignItems, FlexDirection, GridPlacement, LengthPercentage, Line, MaxTrackSizingFunction, MinTrackSizingFunction, TrackSizingFunction};
 use im::vector;
-use tracing_lite::{debug, error, info, trace, warn, Level, Subscriber};
+use tracing_lite::{debug, info, trace, warn, Level, Subscriber};
 use ulid::Ulid;
 use util::{Id, Tb};
 use view_data::msg::MsgViewData;
@@ -30,7 +25,7 @@ use views::chunks::RoomMsgChunks;
 use views::msg::MsgCtx;
 use views::msgs::msgs_view_v2;
 // use views::msgs_view::main_msg_view;
-use views::room::{RoomCtx, ROOM_IDX};
+use views::room::RoomCtx;
 use views::rooms::rooms_view_v2;
 use views::toolbar::toolbar_view_v2;
 
@@ -197,7 +192,7 @@ fn app_view_grid() -> impl IntoView {
 
 // MARK: rooms
 
-fn rooms_view() -> impl IntoView {
+fn _rooms_view() -> impl IntoView {
     info!("->> rooms_view");
     let state = use_context::<Rc<ChatState>>().unwrap();
     let active_room = state.active_room;
@@ -258,7 +253,7 @@ pub enum MsgView {
 
 // MARK: tab_msgs
 
-fn tab_msgs_view(_new_msg_scroll_end: Trigger) -> impl IntoView {
+fn _tab_msgs_view(_new_msg_scroll_end: Trigger) -> impl IntoView {
     let state = use_context::<Rc<ChatState>>().unwrap();
     let state2 = state.clone();
     let state3 = state.clone();
