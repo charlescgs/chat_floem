@@ -16,6 +16,7 @@ use crate::view_data::session::APP;
 /// This function:
 /// - [x] constructs list of the rooms
 /// - [x] updates that list on changes
+/// - [ ] react on new/changed msg and show unread status
 /// - [ ] communicate with msgs
 /// - [ ] communicate with backend
 pub fn rooms_view_v2() -> impl IntoView {
@@ -23,8 +24,6 @@ pub fn rooms_view_v2() -> impl IntoView {
     // -- Needed elements
     let rooms = APP.with(|a| a.rooms);
     let active = APP.with(|a| a.active_room);
-    // let msg_event = use_context::<RwSignal<MsgEvent>>().unwrap();
-    // let room_selected = Trigger::new();
     
     // -- Effect and derives needed for the view
     create_effect(move |_| {
@@ -40,16 +39,6 @@ pub fn rooms_view_v2() -> impl IntoView {
                         }
 
                     }
-                    // if let Some(room) = rooms.get(&active.idx) {
-                    //     room.is_active.update(|cell| {
-                    //         let val = cell.get_mut();
-                    //         println!("changed to true (previous val: {val}");
-                    //         if *val {
-                    //             error!("value was already true!");
-                    //         }
-                    //         *val = true;
-                    //     });
-                    // }
                 });
             }
         })
@@ -89,8 +78,4 @@ pub fn rooms_view_v2() -> impl IntoView {
                 end: GridPlacement::Span(3)
             })
         )
-    // 3. Keep in sync:
-    // - process user clicks and update active tab
-    // - react on last room msg
-    // - react on new/changed msg and show unread status
 }
