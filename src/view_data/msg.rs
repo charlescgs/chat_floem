@@ -18,7 +18,7 @@ use crate::cont::msg::Msg;
 use super::session::APP;
 
 
-static MSG_VIEW_COUNTER: AtomicU16 = AtomicU16::new(0);
+static MSG_VIEW_COUNTER: AtomicU16 = AtomicU16::new(1);
 
 
 /// Contains data needed to display msg widget on the msgs list.
@@ -74,6 +74,16 @@ impl MsgViewData {
             delivered_to_all: true,
             viewed_by_all: true,
         };
+        let room_owner = APP.with(|app| app.active_room.with_untracked(|act_room| {
+            if let Some(ar) = act_room {
+                app.rooms.with_untracked(|rooms| {
+                    if let Some(r) = rooms.get(&ar.idx) {
+                        r.owner.acc_id.id == author.acc_id.id
+                    } else { false }
+                })
+            } else { false }
+        }));
+        
         let cx = APP.with(|app| app.provide_scope());
         Self {
             id: Id::new(Tb::Msg),
@@ -82,7 +92,7 @@ impl MsgViewData {
             com: cx.create_rw_signal(vector!()),
             rea: cx.create_rw_signal(vector!()),
             msg: Rc::new(m),
-            room_owner: true,
+            room_owner,
             view_id: ViewId::new(),
             common_data: APP.with(|gs| gs.common_data.clone())
         }

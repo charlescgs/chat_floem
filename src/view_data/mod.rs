@@ -3,6 +3,8 @@ use std::time::Duration;
 use floem::action::exec_after;
 use floem::action::TimerToken;
 use floem::reactive::Trigger;
+use tracing_lite::debug;
+use tracing_lite::info;
 use ulid::Ulid;
 
 
@@ -17,6 +19,7 @@ pub enum MsgEvent {
     None,
     /// Brand new msg for the provided room. 
     NewFor(Ulid),
+    NewManyFor(Ulid),
     /// Updated msg for the given room.
     UpdatedFor {
         room: Ulid,
@@ -30,30 +33,23 @@ pub enum MsgEvent {
 }
 
 
-/// Debounce an action
-///
-/// This tracks a trigger will run action only once an **uninterrupted** duration has passed.
-pub fn trigger_debounce_action(trigger: Trigger, duration: Duration, action: impl Fn() + Clone + 'static) {
+
+/// This tracks a trigger, that will run action only on second trigger.
+pub fn run_on_second_trigger(trigger: Trigger, action: impl Fn() + 'static) {
     floem::reactive::create_stateful_updater(
-        move |prev_opt: Option<Option<TimerToken>>| {
+        move |previous_trigger: Option<bool>| {
             trigger.track();
-            let execute = true;
-            (execute, prev_opt.and_then(|timer| timer))
-        },
-        move |execute, prev_timer| {
-            // Cancel the previous timer if it exists
-            if let Some(timer) = prev_timer {
-                timer.cancel();
+            let execute = previous_trigger
+                .map(|prev_run| !prev_run)
+                .unwrap_or(true);
+        ((), execute)
+    },
+        move |_, execute| {
+            if execute {
+                info!("fn: run_on_second_trigger: executing action!");
+                action();
             }
-            let timer_token = if execute {
-                let action = action.clone();
-                Some(exec_after(duration, move |_| {
-                    action();
-                }))
-            } else {
-                None
-            };
-            timer_token
-        },
+            execute
+        }
     );
 }

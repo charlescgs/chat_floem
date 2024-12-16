@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use chat_util::gen::gen_u64_in_range;
 use floem::prelude::*;
 use floem::menu::{Menu, MenuItem};
@@ -28,6 +30,7 @@ pub enum NewList {
     None,
     Room,
     Msg,
+    Msgs,
     Account
 }
 
@@ -104,11 +107,55 @@ pub fn toolbar_view_v2() -> impl IntoView {
                             if let Some(room) = rooms.get(&active.idx) {
                                 room.msgs.update(|msgs| {
                                     msgs.append_new_msg(msg.clone());
-                                    info!("New msg appended!");
+                                    info!("New msg appended!")
                                 });
                                 room.last_msg.set(Some(msg));
                                 // -- Notify subscribers about new msg event
                                 msg_event.set(MsgEvent::NewFor(room.room_id.id));
+                            }
+                        })
+                    });
+                }
+            },
+            NewList::Msgs => {
+                trace!("Clicked NewList::Msgs");
+                // -- Get active room
+                if let Some(active) = APP.with(|app| app.active_room.get_untracked()) {
+                    APP.with(|app| {
+                        app.rooms.with_untracked(|rooms| {
+                            // -- Get or create account (only in early faze)
+                            let acc = {
+                                let room = rooms.get(&active.idx).unwrap();
+                                let rand = gen_u64_in_range(0..3);
+                                if rand == 0 {
+                                    room.owner.clone()
+                                } else {
+                                    let keys_vec = room.members.keys().cloned().collect::<Vec<_>>();
+                                    println!("key_vec len: {}", keys_vec.len());
+                                    let key = keys_vec.get(rand as usize - 1).cloned().unwrap();
+                                    room.members.get(&key).unwrap().clone()
+                                }
+                            };
+                            // -- Create msgs
+                            let mut msgs = vec!();
+                            for _ in 0..40 {
+                                std::thread::sleep(Duration::from_millis(2));
+                                msgs.push(MsgViewData::new_from_click(active.id(), &acc))
+                            }
+                            let last_msg = msgs.last().unwrap().clone();
+                            // -- Append msg onto `msgs` and `last_msg`
+                            if let Some(room) = rooms.get(&active.idx) {
+                                room.msgs.update(|chunks| {
+                                    // batch(|| {
+                                        for msg in msgs {
+                                            chunks.append_new_msg(msg);
+                                        }
+                                    // });
+                                });
+                                info!("{} new msgs appended!", room.msgs_count.get_untracked());
+                                room.last_msg.set(Some(last_msg));
+                                // -- Notify subscribers about new msg event
+                                msg_event.set(MsgEvent::NewManyFor(room.room_id.id));
                             }
                         })
                     });
@@ -129,6 +176,9 @@ pub fn toolbar_view_v2() -> impl IntoView {
         Menu::new("")
             .entry(MenuItem::new("Msg").action(move || {
                 new_list_signal.set(NewList::Msg);
+            }))
+            .entry(MenuItem::new("Msgs").action(move || {
+                new_list_signal.set(NewList::Msgs);
             }))
             .entry(MenuItem::new("Room").action(move || {
                 new_list_signal.set(NewList::Room);

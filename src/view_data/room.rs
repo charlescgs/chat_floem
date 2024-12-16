@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use floem::reactive::{batch, create_effect, Memo, Trigger};
 use floem::{prelude::*, ViewId};
@@ -11,12 +11,14 @@ use ulid::Ulid;
 use crate::cont::acc::Account;
 use crate::util::{Id, Tb};
 use crate::common::CommonData;
-use crate::views::chunks::{DisplayChunks, RoomMsgChunks};
+use crate::views::chunks::RoomMsgChunks;
 use crate::views::msgs::RoomMsgUpt;
-use crate::views::room::ROOM_IDX;
 
 use super::msg::MsgViewData;
 use super::session::APP;
+
+
+pub static ROOM_IDX: AtomicUsize = AtomicUsize::new(0);
 
 
 #[derive(Clone)]
@@ -33,7 +35,6 @@ pub struct RoomViewData {
     pub msgs: RwSignal<RoomMsgChunks>,
     
     pub get_update: RwSignal<RoomMsgUpt>,
-    pub chunks_on_display: RwSignal<DisplayChunks>,
     pub is_active: RwSignal<Cell<bool>>,
     pub last_msg: RwSignal<Option<MsgViewData>>,
     pub unread: RwSignal<bool>,
@@ -58,15 +59,16 @@ impl RoomViewData {
             trace!("== memo(room msgs count)");
             msgs.with(|c| c.total_msgs)
         });
+        let owner = accs_list.remove(0);
         let msgs_id = SignalGet::id(&msgs);
-        println!("ROOM MSGS SIGNAL ID: {msgs_id:#?}");
+        // println!("ROOM MSGS SIGNAL ID: {msgs_id:#?}");
         Self {
             room_idx: RoomTabIdx::new(id.id),
             msgs,
             num_unread: cx.create_rw_signal(0),
             unread: cx.create_rw_signal(false),
             description: cx.create_rw_signal(None),
-            owner: accs_list.remove(0),
+            owner,
             members: HashMap::from_iter(accs_list.into_iter().map(|acc | (acc.acc_id.id, acc))),
             view_id: ViewId::new(),
             room_id: id,
@@ -74,7 +76,6 @@ impl RoomViewData {
             common_data: APP.with(|gs| gs.common_data.clone()),
             get_update: cx.create_rw_signal(RoomMsgUpt::NoUpdate),
             msgs_count,
-            chunks_on_display: cx.create_rw_signal(DisplayChunks::default()),
             is_active: cx.create_rw_signal(Cell::new(false))
         }
     }
@@ -162,6 +163,10 @@ impl IntoView for RoomViewData {
                     trace!("effect | room_view_data | get_update: New");
                     need_last_msg_upt.notify();
                 }
+                RoomMsgUpt::NewMany => {
+                    trace!("effect | room_view_data | get_update: NewMany");
+                    need_last_msg_upt.notify();
+                },
                 RoomMsgUpt::Changed(msg) => {
                     last_msg.with_untracked(|lm| {
                         if let Some(last_msg) = lm {
@@ -177,6 +182,9 @@ impl IntoView for RoomViewData {
                         }
                     })
                 },
+                RoomMsgUpt::Deleted(msg) => {
+                    todo!()
+                }
                 _ => {}
             }
         });

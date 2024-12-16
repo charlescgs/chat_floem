@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
+use floem::kurbo::Point;
 use floem::peniko::Color;
 use floem::prelude::*;
 use floem::reactive::{create_effect, use_context, Trigger};
@@ -11,14 +13,14 @@ use im::Vector;
 use ulid::Ulid;
 
 use crate::view_data::session::APP;
-use crate::view_data::{trigger_debounce_action, MsgEvent};
-use crate::views::chunks::DisplayChunks;
+use crate::view_data::{run_on_second_trigger, MsgEvent};
 
 
 
 #[derive(Clone, Debug)]
 pub enum RoomMsgUpt {
     NoUpdate,
+    NewMany,
     New,
     Changed(Ulid),
     Deleted(Ulid)
@@ -57,6 +59,13 @@ pub fn msgs_view_v2() -> impl View {
                     tab.2.set(RoomMsgUpt::New);
                 }
             },
+            MsgEvent::NewManyFor(room) => {
+                trace!("effect: | msgs_view | msg event: NewManyFor({room})");
+                if let Some(tab) = rooms_tabs.with_untracked(|rt| rt.get(&room).cloned()) {
+                    trace!("effect: | msgs_view | roomsTabs is `Some`");
+                    tab.2.set(RoomMsgUpt::NewMany);
+                }
+            },
             MsgEvent::UpdatedFor { room, msg } => {
                 trace!("effect: | msgs_view | msg event: UpdatedFor({room}: {msg})");
                 // Updated msg, just search and replace it
@@ -70,7 +79,7 @@ pub fn msgs_view_v2() -> impl View {
                 if let Some(tab) = rooms_tabs.with_untracked(|rt| rt.get(&room).cloned()) {
                     tab.2.set(RoomMsgUpt::Deleted(msg));
                 }
-            },
+            }
         } 
     });
     
@@ -80,8 +89,6 @@ pub fn msgs_view_v2() -> impl View {
             match active_room.get() {
                 Some(id) => {
                     trace!("tab: active_fn: Some({})", id.idx);
-                    // scroll_to_end.notify();
-                    // rooms_tabs.with_untracked(|rt| rt.get(&id.id).unwrap().0)
                     id.idx
                 },
                 None => {
@@ -106,13 +113,13 @@ pub fn msgs_view_v2() -> impl View {
                 // let x = create_updater(compute, on_change);
                 let msgs_count = room.msgs_count;
                 // let cx = APP.with(|app| app.provide_scope());
-                let msgs_vec = RwSignal::new(Vector::new());
-                // let scroll_rect = RwSignal::new(Point::ZERO);
+                let msgs_btree = RwSignal::new(BTreeMap::new());
+                let scroll_rect = RwSignal::new(Point::ZERO);
                 let is_active = room.is_active;
                 let load_more = Trigger::new();
+                let reload = Trigger::new();
                 let room_idx = room.idx();
                 // -- Tracks how many chunks is in this room
-                let chunks_on_display = RwSignal::new(DisplayChunks::default());
 
                 create_effect(move |_| {
                     trace!("== effect: scroll end on tab switch for {room_idx}");
@@ -124,30 +131,56 @@ pub fn msgs_view_v2() -> impl View {
                 });
 
                 create_effect(move |_| {
-                    trigger_debounce_action(load_more, Duration::from_millis(500), move || {
+                    run_on_second_trigger(load_more, move || {
                         room_chunks.with_untracked(|chunks| {
                             debug!("== effect(with debounce): load_more msgs");
                             // -- Only load next chunk if more left
-                            if msgs_count.get_untracked() < chunks.total_msgs {
-                                let chunk = chunks.load_only_next();
-                                if !chunk.is_empty() {
-                                    trace!("== effect(with debounce): loaded next chunk");
-                                    msgs_vec.update(|v| v.append(chunk[0].msgs.clone()));
-                                }
+                            let count = msgs_count.get_untracked();
+                            let total = chunks.total_msgs;
+                            println!("if {count} == {total} then load next chunk");
+                            // Case 1: Everything loaded
+                            // Case 2: Nothing loaded, load next
+                            // Case 3: One loaded, load next
+                            // Case 4: Many loaded, load next
+                            // Case 5: 
+                            // 1. Get data from room chunks and display chunks
+                            let total_chunks = chunks.chunks_count;
+                            let last_on_display = chunks.oldest_display_chunk_idx.get(); //  need - 1
+                            // 2. Compare them and act upon the result:
+                            // assert!(dis_chunks.total == total_chunks);
+                            
+                            let older_chunk = chunks.load_older_chunk();
+                            println!("loaded chunk len: {}", older_chunk.len());
+                            if !older_chunk.is_empty() {
+                                trace!("== effect(with debounce): loaded next chunk");
+                                msgs_btree.update(|btree| {
+                                    for msg in older_chunk {
+                                        btree.insert(msg.id.id, msg.clone());
+                                    }
+                                });
                             }
                         });
                     });
                 });
-                
+
                 create_effect(move |_| {
                     debug!("== effect: msgs tab({idx})");
                     match get_upt.get() {
                         RoomMsgUpt::NoUpdate => {},
+                        RoomMsgUpt::NewMany => {
+                            msgs_btree.update(|btree| {
+                                room_chunks.with_untracked(|chunks| {
+                                    debug!("RoomMsgUpt::NewMany: {idx} with new msgs, loading new content");
+                                    let current_youngest_msg = btree.keys().last().cloned();
+                                    btree.extend(chunks.load_new_content(current_youngest_msg).into_iter().map(|m| (m.id.id, m)));
+                                })
+                            });
+                        },
                         RoomMsgUpt::New => {
                             if let Some(new_msg) = room.last_msg.get_untracked() {
-                                debug!("RoomMsgUpt: {idx} with new msg: {}", new_msg.id.id);
-                                msgs_vec.update(|v| v.push_back(new_msg));
-                                println!("msgs vector len: {}", msgs_vec.with_untracked(|v| v.len()));
+                                debug!("RoomMsgUpt::New: {idx} with new msg: {}", new_msg.id.id);
+                                msgs_btree.update(|v| { v.insert(new_msg.id.id, new_msg); });
+                                println!("msgs vector len: {}", msgs_btree.with_untracked(|btree| btree.len()));
                                 scroll_to_end.notify();
                             } else {
                                 warn!("RoomMsgUpt: {idx} last msg fn returned None")
@@ -156,40 +189,29 @@ pub fn msgs_view_v2() -> impl View {
                         },
                         RoomMsgUpt::Changed(msg_id) => {
                             if let Some(changed_msg) = room_chunks.with_untracked(|rc| rc.find_msg(msg_id).cloned()) {
-                                let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&changed_msg)) else { return };
-                                debug!("RoomMsgUpt: {idx} with upt msg: {}", changed_msg.id.id);
-                                msgs_vec.update(|v| { let _ = v.update(idx, changed_msg); });
+                                debug!("RoomMsgUpt::Changed: {idx} with upt msg: {}", changed_msg.id.id);
+                                msgs_btree.update(|btree|
+                                    if let Some(msg) = btree.get_mut(&changed_msg.id.id) {
+                                        *msg = changed_msg;
+                                    }
+                                );
                             }
-                            // msgs
                         },
                         RoomMsgUpt::Deleted(ref msg_id) => {
-                            let mut del_idx = 0;
-                            if let Some(del_msg) = msgs_vec.with_untracked(|v| v.iter().find(|m| &m.id.id == msg_id).cloned()) {
-                                let del_idx_found =
-                                    if let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&del_msg)) {
-                                        del_idx = idx;
-                                        debug!("RoomMsgUpt: {idx} with {}", del_msg.id.id);
-                                        true
-                                    } else {
-                                        false
-                                    };
-                                if del_idx_found {
-                                    msgs_vec.update(|v| { v.remove(del_idx); });
-                                }
-                            }
-                            // msgs
+                            debug!("RoomMsgUpt::Deleted: {idx} with {msg_id}");
+                            msgs_btree.update(|btree| { btree.remove(&msg_id); });
                         }
                     }
                 });
                 
                 dyn_stack(
                     move || {
-                        let chunks = msgs_vec.get();
+                        let chunks = msgs_btree.get();
                         info!("->> dyn_stack: msg(each_fn) (with {} msg/s)", chunks.len());
-                        for each in chunks.iter() {
-                            println!("{}", each.id)
+                        for (each_id, _) in chunks.iter() {
+                            println!("{each_id}")
                         }
-                        chunks.into_iter().enumerate()
+                        chunks.into_iter()
                     },
                     |(idx, msg)| {
                         info!("dyn_stack: msg(key_fn) for {}", msg.id.id);
@@ -198,13 +220,10 @@ pub fn msgs_view_v2() -> impl View {
                     |(_, msg)| {
                         trace!("dyn_stack: msg(view_fn): {}", msg.id);
                         let id = msg.id.id.0;
-                        // let _is_owner = msg.room_owner;
-                        msg
-                            .style(move |s| s.apply_if(id % 2 == 0, // for now
-                                // is_owner,
-                                |s| s.align_self(AlignItems::End)
-                                )
-                            )
+                        let is_owner = msg.room_owner;
+                        msg.style(move |s| s.apply_if(is_owner,
+                            |s| s.align_self(AlignItems::End)
+                            ))
                         }
                     ).debug_name("msgs list")
                     .style(|s| s
@@ -223,12 +242,14 @@ pub fn msgs_view_v2() -> impl View {
                     .scroll_style(|s| s
                         .handle_thickness(6.)
                         .shrink_to_fit()
+                        .propagate_pointer_wheel(true)
                     )
+                    // .ensure_visible(move || {})
                     .on_scroll(move |rect| {
                         // println!("{:?}", rect.origin());
-                        // scroll_rect.set(rect.origin());
+                        // println!("{}", Point::new(rect.x0, rect.y0));
                         if msgs_count.get() > 20 {
-                            // scroll_rect.set(rect);
+                            // scroll_rect.set(Point::new(rect.x0, rect.y0));
                             if rect.y0 == 0.0 {
                                 trace!("dyn_stack: msg: on_scroll: load_more notified!");
                                 load_more.notify();
@@ -241,7 +262,7 @@ pub fn msgs_view_v2() -> impl View {
                         100.0
                     })
                     // .scroll_to(move || {
-                    //     // tab_focus.get()
+                    //     Some(scroll_rect.get())
                     // })
             }
         ).debug_name("msgs tabs")
