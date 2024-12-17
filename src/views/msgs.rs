@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use floem::kurbo::Point;
 use floem::peniko::Color;
 use floem::prelude::*;
 use floem::reactive::{create_effect, use_context, Trigger};
@@ -11,7 +10,7 @@ use tracing_lite::{debug, info, trace, warn};
 use ulid::Ulid;
 
 use crate::view_data::session::APP;
-use crate::view_data::{run_on_second_trigger, MsgEvent};
+use crate::view_data::MsgEvent;
 
 
 
@@ -21,7 +20,8 @@ pub enum RoomMsgUpt {
     NewMany,
     NoUpdate,
     Changed(Ulid),
-    Deleted(Ulid)
+    Deleted(Ulid),
+    LoadMore
 }
 
 
@@ -38,6 +38,7 @@ pub fn msgs_view_v2() -> impl View {
     let rooms = APP.with(|app| app.rooms);
     let active_room = APP.with(|app| app.active_room);
     let rooms_tabs = APP.with(|app| app.rooms_tabs);
+    let show_load_more_button = use_context::<RwSignal<bool>>().unwrap();
 
     // -- Effect and derives needed for the view
 
@@ -80,7 +81,6 @@ pub fn msgs_view_v2() -> impl View {
             }
         } 
     });
-    
     // -- View stack
     stack((
         tab(move || {
@@ -102,6 +102,7 @@ pub fn msgs_view_v2() -> impl View {
                 trace!("tab: key_fn: {idx}");
                 *idx
             },
+// MARK: tab
             move |(idx, room)| {
                 let scroll_to_end = Trigger::new();
                 // -- Tab logic and state
@@ -114,11 +115,11 @@ pub fn msgs_view_v2() -> impl View {
                 let msgs_btree = RwSignal::new(BTreeMap::new());
                 // let _scroll_rect = RwSignal::new(Point::ZERO);
                 let is_active = room.is_active;
-                let load_more = Trigger::new();
+                // let load_more = Trigger::new();
                 // let _reload = Trigger::new();
                 let room_idx = room.idx();
                 // -- Tracks how many chunks is in this room
-
+                
                 create_effect(move |_| {
                     trace!("== effect: scroll end on tab switch for {room_idx}");
                     is_active.with(|cell| {
@@ -129,42 +130,21 @@ pub fn msgs_view_v2() -> impl View {
                 });
 
                 create_effect(move |_| {
-                    run_on_second_trigger(load_more, move || {
-                        room_chunks.with_untracked(|chunks| {
-                            debug!("== effect(with debounce): load_more msgs");
-                            // -- Only load next chunk if more left
-                            let count = msgs_count.get_untracked();
-                            let total = chunks.total_msgs;
-                            println!("if {count} == {total} then load next chunk");
-                            // Case 1: Everything loaded
-                            // Case 2: Nothing loaded, load next
-                            // Case 3: One loaded, load next
-                            // Case 4: Many loaded, load next
-                            // Case 5: 
-                            // 1. Get data from room chunks and display chunks
-                            // let total_chunks = chunks.chunks_count;
-                            // let last_on_display = chunks.oldest_display_chunk_idx.get(); //  need - 1
-                            // 2. Compare them and act upon the result:
-                            // assert!(dis_chunks.total == total_chunks);
-                            
-                            let older_chunk = chunks.load_older_chunk();
-                            println!("loaded chunk len: {}", older_chunk.len());
-                            if !older_chunk.is_empty() {
-                                trace!("== effect(with debounce): loaded next chunk");
-                                msgs_btree.update(|btree| {
-                                    for msg in older_chunk {
-                                        btree.insert(msg.id.id, msg.clone());
-                                    }
-                                });
-                            }
-                        });
-                    });
-                });
-
-                create_effect(move |_| {
                     debug!("== effect: msgs tab({idx})");
                     match get_upt.get() {
                         RoomMsgUpt::NoUpdate => {},
+                        RoomMsgUpt::LoadMore => {
+                            debug!("RoomMsgUpt::LoadMore");
+                            if room.msgs_count.get_untracked() > msgs_btree.with_untracked(|btree| btree.len() as u16) {
+                                msgs_btree.update(|btree| {
+                                    room_chunks.with_untracked(|chunks| {
+                                        for each in chunks.load_older_chunk() {
+                                            btree.insert(each.id.id, each.clone());
+                                        }
+                                    })
+                                });
+                            }
+                        },
                         RoomMsgUpt::NewMany => {
                             msgs_btree.update(|btree| {
                                 room_chunks.with_untracked(|chunks| {
@@ -221,7 +201,6 @@ pub fn msgs_view_v2() -> impl View {
                     },
                     |(_, msg)| {
                         trace!("dyn_stack: msg(view_fn): {}", msg.id);
-                        let _id = msg.id.id.0;
                         let is_owner = msg.room_owner;
                         msg.style(move |s| s.apply_if(is_owner,
                             |s| s.align_self(AlignItems::End)
@@ -248,12 +227,15 @@ pub fn msgs_view_v2() -> impl View {
                     )
                     .on_scroll(move |rect| {
                         // println!("{:?}", rect.origin());
-                        if msgs_count.get() > 20 {
-                            // scroll_rect.set(Point::new(rect.x0, rect.y0));
-                            if rect.y0 == 0.0 {
-                                // trace!("dyn_stack: msg: on_scroll: load_more notified!");
+                        if rect.y0 == 0.0 {
+                            if msgs_count.get() > 20 {
+                                // println!("on_scroll: load_more true!");
+                                show_load_more_button.set(true);
                                 // load_more.notify();
                             }
+                        } else {
+                            // println!("on_scroll: load_more false!");
+                            show_load_more_button.set(false);
                         }
                     })
                     .scroll_to_percent(move || {
@@ -261,11 +243,7 @@ pub fn msgs_view_v2() -> impl View {
                         trace!("scroll_to_end notified for {}", room.idx());
                         100.0
                     })
-                    // .scroll_to(move || {
-                    //     Some(scroll_rect.get())
-                    // })
-            }
-        ).debug_name("msgs tabs")
+        }).debug_name("msgs tabs")
         .style(|s| s.size_full())
         // .on_resize(move |_rect| {
             // scroll_pos.set(rect);

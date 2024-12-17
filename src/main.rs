@@ -52,7 +52,8 @@ fn main() {
     provide_context(RwSignal::new(None::<Id>));     // Msg tracker
     provide_context(RwSignal::new(MsgEvent::None)); // Msg load tracker
     provide_context(RwSignal::new(None::<Ulid>));   // New room id editor signal
-    provide_context(Trigger::new()); // Msg send signal
+    provide_context(Trigger::new());                // Msg send signal
+    provide_context(RwSignal::new(false));          // Load more signal
     launch_with_config(app_view)
 }
 

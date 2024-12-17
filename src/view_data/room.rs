@@ -57,7 +57,7 @@ impl RoomViewData {
         let msgs = cx.create_rw_signal(RoomMsgChunks::new(id.clone()));
         let msgs_count = cx.create_memo(move |_| {
             trace!("== memo(room msgs count)");
-            msgs.with_untracked(|c| c.total_msgs)
+            msgs.with(|c| c.total_msgs)
         });
         let owner = accs_list.remove(0);
         let _msgs_id = SignalGet::id(&msgs);

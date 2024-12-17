@@ -3,7 +3,7 @@ use std::time::Duration;
 use chat_util::gen::gen_u64_in_range;
 use floem::prelude::*;
 use floem::menu::{Menu, MenuItem};
-use floem::reactive::batch;
+use floem::reactive::{batch, create_memo};
 use floem::reactive::create_effect;
 use floem::reactive::use_context;
 use floem::taffy::prelude::TaffyGridLine;
@@ -16,6 +16,8 @@ use crate::view_data::msg::MsgViewData;
 use crate::view_data::room::RoomViewData;
 use crate::view_data::session::APP;
 use crate::view_data::MsgEvent;
+
+use super::msgs::RoomMsgUpt;
 
 
 #[derive(Clone, Debug)]
@@ -54,7 +56,10 @@ pub fn toolbar_view_v2() -> impl IntoView {
     // -- Id is a room, that got an update
     let msg_event = use_context::<RwSignal<MsgEvent>>().unwrap();
     let new_room_editor_doc = use_context::<RwSignal<Option<Ulid>>>().unwrap();
-
+    let show_load_more_button = use_context::<RwSignal<bool>>().unwrap();
+    let show_load_memo = create_memo(move |_| {
+        show_load_more_button.get()
+    });
     // -- Action to create test room on click
     create_effect(move |_| {
         trace!("->> effect for `New Menu`");
@@ -208,14 +213,36 @@ pub fn toolbar_view_v2() -> impl IntoView {
     
     stack((
         h_stack((
-            new_menu,
-            edit_menu,
-            "Settings".button().action(move || {}),
-            "About".button().action(move || {})
+            stack((
+                new_menu,
+                edit_menu,
+                "Settings".button().action(move || {}),
+                "About".button().action(move || {}),
+            )).style(|s| s
+                .padding(5.)
+                .row_gap(5.)
+            ),
+            "load more".button().action(move || {
+                let act_room = APP.with(|app| {
+                    if let Some(ar) = app.active_room.get_untracked() {
+                        app.rooms_tabs.with_untracked(|rt| {
+                            if let Some(act_tab) = rt.get(&ar.id) {
+                                act_tab.2.set(RoomMsgUpt::LoadMore);
+                            }
+                        });
+                    }
+                }); 
+            })
+                .disabled(move || !show_load_memo.get())
+                .style(|s| s.disabled(|s| s
+                    .background(Color::TRANSPARENT)
+                    .color(Color::TRANSPARENT)
+                ))
+                .container()
+                .style(|s| s.padding(5.))
         )).style(|s| s
-            .justify_content(AlignContent::Start)
-            .padding(5.)
-            .row_gap(5.)
+            .size_full()
+            .justify_content(AlignContent::SpaceBetween)
         ),
     )).debug_name("menu toolbar")
     .style(|s| s
