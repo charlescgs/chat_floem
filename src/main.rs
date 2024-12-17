@@ -1,7 +1,4 @@
-#![allow(unused)]
-use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
-use std::rc::Rc;
+// #![allow(unused)]
 
 use config::launch_with_config;
 use floem::prelude::*;
@@ -12,8 +9,9 @@ use floem::taffy::{
     MinTrackSizingFunction, TrackSizingFunction
 };
 use tracing_lite::{Level, Subscriber};
+use ulid::Ulid;
 use util::Id;
-use view_data::editor::{editor_toolbar_view, text_editor_view};
+use view_data::editor::{editor_toolbar_view, EditorViewData};
 use view_data::MsgEvent;
 use views::msgs::msgs_view_v2;
 use views::rooms::rooms_view_v2;
@@ -51,22 +49,24 @@ pub const BUTTON_ACTIVE: Color = Color::rgb8(250, 0, 0);
 // -----------------------
 fn main() {
     Subscriber::new_with_max_level(Level::TRACE).with_short_time_format();
-    provide_context(RwSignal::new(None::<Id>)); // Msg tracker
+    provide_context(RwSignal::new(None::<Id>));     // Msg tracker
     provide_context(RwSignal::new(MsgEvent::None)); // Msg load tracker
+    provide_context(RwSignal::new(None::<Ulid>));   // New room id editor signal
+    provide_context(Trigger::new()); // Msg send signal
     launch_with_config(app_view)
 }
 
 
 fn app_view() -> impl IntoView {
-    let send_msg = Trigger::new();
     // let new_msg_scroll_end = Trigger::new();
     // provide_context(new_msg_scroll_end);
     stack((
         toolbar_view_v2(),
         rooms_view_v2(),
         msgs_view_v2(),
-        text_editor_view(send_msg),
-        editor_toolbar_view(send_msg),
+        // text_editor_view(send_msg),
+        EditorViewData::new(),
+        editor_toolbar_view(),
     ))
         .debug_name("grid container")
         .style(|s| s

@@ -44,7 +44,7 @@ pub struct UISession {
 impl UISession {
     pub fn new() -> Self {
         let cx = Scope::new();
-        println!("UISession scope: {cx:#?}");
+        // println!("UISession scope: {cx:#?}");
         let mut accs = Vec::with_capacity(3);
         while let Some(acc) = Account::new_from_click() {
             accs.push(acc);

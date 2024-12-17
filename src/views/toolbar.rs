@@ -9,6 +9,7 @@ use floem::reactive::use_context;
 use floem::taffy::prelude::TaffyGridLine;
 use floem::taffy::{AlignContent, GridPlacement, Line};
 use tracing_lite::{debug, error, info, trace};
+use ulid::Ulid;
 
 use crate::cont::acc::Account;
 use crate::view_data::msg::MsgViewData;
@@ -52,10 +53,11 @@ pub fn toolbar_view_v2() -> impl IntoView {
     let new_list_signal = RwSignal::new(NewList::None);
     // -- Id is a room, that got an update
     let msg_event = use_context::<RwSignal<MsgEvent>>().unwrap();
+    let new_room_editor_doc = use_context::<RwSignal<Option<Ulid>>>().unwrap();
 
     // -- Action to create test room on click
     create_effect(move |_| {
-        trace!("create_effect for `New Menu`");
+        trace!("->> effect for `New Menu`");
         let new = new_list_signal.get();
         match new {
             NewList::None => { trace!("Clicked NewList::None"); },
@@ -79,6 +81,7 @@ pub fn toolbar_view_v2() -> impl IntoView {
                             );
                         });
                     });
+                    new_room_editor_doc.set(Some(room_view.room_id.id));
                     trace!("Created and inserted test RoomViewData")
                 });
             },

@@ -57,10 +57,10 @@ impl RoomViewData {
         let msgs = cx.create_rw_signal(RoomMsgChunks::new(id.clone()));
         let msgs_count = cx.create_memo(move |_| {
             trace!("== memo(room msgs count)");
-            msgs.with(|c| c.total_msgs)
+            msgs.with_untracked(|c| c.total_msgs)
         });
         let owner = accs_list.remove(0);
-        let msgs_id = SignalGet::id(&msgs);
+        let _msgs_id = SignalGet::id(&msgs);
         // println!("ROOM MSGS SIGNAL ID: {msgs_id:#?}");
         Self {
             room_idx: RoomTabIdx::new(id.id),
@@ -127,7 +127,7 @@ impl IntoView for RoomViewData {
     /// - [x] Tracks and updates last msg status
     ///     - [ ] updates it in fine-grained way
     fn into_view(self) -> Self::V {
-        let this_room = self.room_id.id;
+        let _this_room = self.room_id.id;
         let active = APP.with(|a| a.active_room);
         let last_msg = self.last_msg;
         let msgs = self.msgs;

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use floem::kurbo::Point;
 use floem::peniko::Color;
@@ -9,7 +8,6 @@ use floem::taffy::prelude::TaffyGridLine;
 use floem::taffy::{AlignItems, FlexDirection, GridPlacement, Line};
 use floem::views::{dyn_stack, stack, tab, Decorators, ScrollExt};
 use tracing_lite::{debug, info, trace, warn};
-use im::Vector;
 use ulid::Ulid;
 
 use crate::view_data::session::APP;
@@ -19,9 +17,9 @@ use crate::view_data::{run_on_second_trigger, MsgEvent};
 
 #[derive(Clone, Debug)]
 pub enum RoomMsgUpt {
-    NoUpdate,
-    NewMany,
     New,
+    NewMany,
+    NoUpdate,
     Changed(Ulid),
     Deleted(Ulid)
 }
@@ -114,10 +112,10 @@ pub fn msgs_view_v2() -> impl View {
                 let msgs_count = room.msgs_count;
                 // let cx = APP.with(|app| app.provide_scope());
                 let msgs_btree = RwSignal::new(BTreeMap::new());
-                let scroll_rect = RwSignal::new(Point::ZERO);
+                let _scroll_rect = RwSignal::new(Point::ZERO);
                 let is_active = room.is_active;
                 let load_more = Trigger::new();
-                let reload = Trigger::new();
+                let _reload = Trigger::new();
                 let room_idx = room.idx();
                 // -- Tracks how many chunks is in this room
 
@@ -172,12 +170,17 @@ pub fn msgs_view_v2() -> impl View {
                                 room_chunks.with_untracked(|chunks| {
                                     debug!("RoomMsgUpt::NewMany: {idx} with new msgs, loading new content");
                                     let current_youngest_msg = btree.keys().last().cloned();
-                                    btree.extend(chunks.load_new_content(current_youngest_msg).into_iter().map(|m| (m.id.id, m)));
+                                    btree.extend(
+                                        chunks
+                                            .load_new_content(current_youngest_msg)
+                                            .into_iter()
+                                            .map(|m| (m.id.id, m))
+                                    );
                                 })
                             });
                         },
                         RoomMsgUpt::New => {
-                            if let Some(new_msg) = room.last_msg.get_untracked() {
+                            if let Some(new_msg) = room.msgs.with_untracked(|chunks| chunks.last_msg().cloned()) {
                                 debug!("RoomMsgUpt::New: {idx} with new msg: {}", new_msg.id.id);
                                 msgs_btree.update(|v| { v.insert(new_msg.id.id, new_msg); });
                                 println!("msgs vector len: {}", msgs_btree.with_untracked(|btree| btree.len()));
@@ -185,7 +188,6 @@ pub fn msgs_view_v2() -> impl View {
                             } else {
                                 warn!("RoomMsgUpt: {idx} last msg fn returned None")
                             }
-                            // msgs
                         },
                         RoomMsgUpt::Changed(msg_id) => {
                             if let Some(changed_msg) = room_chunks.with_untracked(|rc| rc.find_msg(msg_id).cloned()) {
@@ -208,9 +210,9 @@ pub fn msgs_view_v2() -> impl View {
                     move || {
                         let chunks = msgs_btree.get();
                         info!("->> dyn_stack: msg(each_fn) (with {} msg/s)", chunks.len());
-                        for (each_id, _) in chunks.iter() {
-                            println!("{each_id}")
-                        }
+                        // for (each_id, _) in chunks.iter() {
+                        //     println!("{each_id}")
+                        // }
                         chunks.into_iter()
                     },
                     |(idx, msg)| {
@@ -219,7 +221,7 @@ pub fn msgs_view_v2() -> impl View {
                     },
                     |(_, msg)| {
                         trace!("dyn_stack: msg(view_fn): {}", msg.id);
-                        let id = msg.id.id.0;
+                        let _id = msg.id.id.0;
                         let is_owner = msg.room_owner;
                         msg.style(move |s| s.apply_if(is_owner,
                             |s| s.align_self(AlignItems::End)
@@ -244,15 +246,13 @@ pub fn msgs_view_v2() -> impl View {
                         .shrink_to_fit()
                         .propagate_pointer_wheel(true)
                     )
-                    // .ensure_visible(move || {})
                     .on_scroll(move |rect| {
                         // println!("{:?}", rect.origin());
-                        // println!("{}", Point::new(rect.x0, rect.y0));
                         if msgs_count.get() > 20 {
                             // scroll_rect.set(Point::new(rect.x0, rect.y0));
                             if rect.y0 == 0.0 {
-                                trace!("dyn_stack: msg: on_scroll: load_more notified!");
-                                load_more.notify();
+                                // trace!("dyn_stack: msg: on_scroll: load_more notified!");
+                                // load_more.notify();
                             }
                         }
                     })

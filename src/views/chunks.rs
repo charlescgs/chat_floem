@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 use std::cell::Cell;
 
-use floem::prelude::RwSignal;
-use im::{vector, Vector};
 use tracing_lite::{debug, info, trace, warn};
 use ulid::Ulid;
 
@@ -238,7 +236,7 @@ impl RoomMsgChunks {
             Some(last_loaded_msg) => {
                 let mut msg_idx = None;
                 // 1. Find chunk.
-                let mut chunk_idx = self.chunks
+                let chunk_idx = self.chunks
                     .iter()
                     .position(|chunk| {
                         debug!("chunk: {} <= {}", chunk.last.timestamp_ms(), last_loaded_msg.timestamp_ms());

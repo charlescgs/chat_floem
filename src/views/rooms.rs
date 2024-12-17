@@ -25,7 +25,7 @@ pub fn rooms_view_v2() -> impl IntoView {
     let rooms = APP.with(|a| a.rooms);
     let active = APP.with(|a| a.active_room);
     
-    // -- Effect and derives needed for the view
+    // -- Effects and derives needed for the view
     create_effect(move |_| {
         debug!("== effect(is_active run)");
         // active.track();
@@ -37,7 +37,6 @@ pub fn rooms_view_v2() -> impl IntoView {
                             println!("changed to false: {}", room.idx());
                             room.is_active.with_untracked(|cell| cell.set(false));
                         }
-
                     }
                 });
             }
