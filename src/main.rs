@@ -33,9 +33,9 @@ pub mod views {
     pub mod msgs_view;
     // pub mod room;
     pub mod rooms;
-    pub mod chunks;
     pub mod toolbar;
 }
+pub mod chunks;
 
 pub const SIDEBAR_WIDTH: f64 = 150.0;
 pub const TOPBAR_HEIGHT: f64 = 35.0;

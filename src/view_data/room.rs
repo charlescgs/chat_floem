@@ -12,7 +12,7 @@ use ulid::Ulid;
 use crate::cont::acc::Account;
 use crate::util::{Id, Tb};
 use crate::common::CommonData;
-use crate::views::chunks::RoomMsgChunks;
+use crate::chunks::RoomMsgChunks;
 use crate::views::msgs::RoomMsgUpt;
 
 use super::msg::MsgViewData;
