@@ -1,4 +1,4 @@
-// #![allow(unused)]
+#![allow(unused)]
 
 use config::launch_with_config;
 use floem::prelude::*;
@@ -58,14 +58,11 @@ fn main() {
 
 
 fn app_view() -> impl IntoView {
-    // let new_msg_scroll_end = Trigger::new();
-    // provide_context(new_msg_scroll_end);
     stack((
         toolbar_view_v2(),
         rooms_view_v2(),
         msgs_view_v2(),
-        // text_editor_view(send_msg),
-        EditorViewData::new(),
+        EditorViewData::new(), // OR: text_editor_view(send_msg),
         editor_toolbar_view(),
     ))
         .debug_name("grid container")
@@ -121,7 +118,6 @@ fn app_view() -> impl IntoView {
             .row_gap(5.)
             .size_full()
             .padding(5.)
-
             .border(2.)
             .border_color(Color::BLACK)
             .border_radius(5.)

@@ -156,27 +156,9 @@ impl IntoView for EditorViewData {
                     });
                 }
             }
-            // if !is_success {
-            //     rooms.update(|rooms| {
-            //         if rooms.insert(active_room.idx, RoomMsgChunks::new_from_single_msg(new_msg)).is_none() {
-            //             trace!("Inserted new MsgCtx to state.rooms_msgs and created RoomMsgChunks")
-            //         }    
-            //     })
-            // }
-                
-            // msgs_tracker.set(Some(active_room));
-            // msg_view.set(MsgView::NewMsg(active_room));
-            
-            // editor_focus_view.with_untracked(|efv| {
-            //     if let Some(view_id) = efv {
-            //         info!("editor focus requested");
-            //         view_id.request_focus()
-            //     }
-            // })
         });
             
-        stack((
-            container(text_editor)
+        stack((container(text_editor)
             .style(|s| s
                 .flex_grow(1.)
                 .flex_shrink(2.)

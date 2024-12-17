@@ -112,10 +112,10 @@ pub fn msgs_view_v2() -> impl View {
                 let msgs_count = room.msgs_count;
                 // let cx = APP.with(|app| app.provide_scope());
                 let msgs_btree = RwSignal::new(BTreeMap::new());
-                let _scroll_rect = RwSignal::new(Point::ZERO);
+                // let _scroll_rect = RwSignal::new(Point::ZERO);
                 let is_active = room.is_active;
                 let load_more = Trigger::new();
-                let _reload = Trigger::new();
+                // let _reload = Trigger::new();
                 let room_idx = room.idx();
                 // -- Tracks how many chunks is in this room
 
@@ -142,8 +142,8 @@ pub fn msgs_view_v2() -> impl View {
                             // Case 4: Many loaded, load next
                             // Case 5: 
                             // 1. Get data from room chunks and display chunks
-                            let total_chunks = chunks.chunks_count;
-                            let last_on_display = chunks.oldest_display_chunk_idx.get(); //  need - 1
+                            // let total_chunks = chunks.chunks_count;
+                            // let last_on_display = chunks.oldest_display_chunk_idx.get(); //  need - 1
                             // 2. Compare them and act upon the result:
                             // assert!(dis_chunks.total == total_chunks);
                             
