@@ -50,7 +50,7 @@ impl std::fmt::Display for EditList {
 
 
 /// - [ ] reacts on clicked buttons/menus with actions.
-pub fn toolbar_view_v2() -> impl IntoView {
+pub fn toolbar_view() -> impl IntoView {
     let edit_list_signal = RwSignal::new(EditList::None);
     let new_list_signal = RwSignal::new(NewList::None);
     // -- Id is a room, that got an update

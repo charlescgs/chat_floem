@@ -13,13 +13,12 @@ use ulid::Ulid;
 use util::Id;
 use view_data::editor::{editor_toolbar_view, EditorViewData};
 use view_data::MsgEvent;
-use views::msgs::msgs_view_v2;
-use views::rooms::rooms_view_v2;
-use views::toolbar::toolbar_view_v2;
+use views::msgs::msgs_view;
+use views::rooms::rooms_view;
+use views::toolbar::toolbar_view;
 
 pub mod common;
 pub mod view_data;
-pub mod element;
 pub mod config;
 pub mod cont {
     pub mod msg;
@@ -28,10 +27,7 @@ pub mod cont {
 }
 pub mod util;
 pub mod views {
-    pub mod msg;
     pub mod msgs;
-    pub mod msgs_view;
-    // pub mod room;
     pub mod rooms;
     pub mod toolbar;
 }
@@ -62,9 +58,9 @@ fn main() {
 
 fn app_view() -> impl IntoView {
     stack((
-        toolbar_view_v2(),
-        rooms_view_v2(),
-        msgs_view_v2(),
+        toolbar_view(),
+        rooms_view(),
+        msgs_view(),
         EditorViewData::new(), // OR: text_editor_view(send_msg),
         editor_toolbar_view(),
     ))

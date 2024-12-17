@@ -11,7 +11,7 @@ use tracing_lite::info;
 
 use crate::cont::msg::Text;
 use crate::util::{Id, Tb};
-use crate::views::msg::{ComCtx, ReaCtx};
+// use crate::views::msg::{ComCtx, ReaCtx};
 use crate::common::CommonData;
 use crate::cont::acc::Account;
 use crate::cont::msg::Msg;
@@ -148,3 +148,16 @@ impl PartialEq for MsgViewData {
 }
 
 impl Eq for MsgViewData {}
+
+// MARK: Com Rea
+
+#[derive(Clone, Debug)]
+pub struct ComCtx {
+    _id: Id,
+
+}
+
+#[derive(Clone, Debug)]
+pub struct ReaCtx {
+    _id: Id,
+}

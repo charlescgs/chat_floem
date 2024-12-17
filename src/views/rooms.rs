@@ -19,7 +19,7 @@ use crate::view_data::session::APP;
 /// - [ ] react on new/changed msg and show unread status
 /// - [ ] communicate with msgs
 /// - [ ] communicate with backend
-pub fn rooms_view_v2() -> impl IntoView {
+pub fn rooms_view() -> impl IntoView {
     info!("->> rooms_view");
     // -- Needed elements
     let rooms = APP.with(|a| a.rooms);

@@ -33,7 +33,7 @@ pub enum RoomMsgUpt {
 /// - [x] update view on changes
 /// - [ ] communicate with rooms
 /// - [ ] communicate with backend
-pub fn msgs_view_v2() -> impl View {
+pub fn msgs_view() -> impl View {
     info!("->> msgs_view");
     // -- Needed elements
     let msg_event = use_context::<RwSignal<MsgEvent>>().unwrap();
