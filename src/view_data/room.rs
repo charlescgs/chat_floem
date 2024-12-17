@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -30,13 +31,15 @@ pub struct RoomViewData {
 
     pub owner: Account,
     pub members: HashMap<Ulid, Account>,
-    pub msgs_count: Memo<u16>,
+    // pub msgs_count: Memo<u16>,
+    pub msgs_count: Cell<u16>,
     pub description: RwSignal<Option<String>>,
     pub msgs: RwSignal<RoomMsgChunks>,
     
     pub get_update: RwSignal<RoomMsgUpt>,
     pub is_active: RwSignal<Cell<bool>>,
     pub last_msg: RwSignal<Option<MsgViewData>>,
+    // pub display_state: RwSignal<DisplayState>,
     pub unread: RwSignal<bool>,
     pub num_unread: RwSignal<u16>,
 
@@ -55,10 +58,13 @@ impl RoomViewData {
         });
         let id = Id::new(Tb::Room);
         let msgs = cx.create_rw_signal(RoomMsgChunks::new(id.clone()));
-        let msgs_count = cx.create_memo(move |_| {
-            trace!("== memo(room msgs count)");
-            msgs.with(|c| c.total_msgs)
-        });
+        // let msgs_count = cx.create_memo(move |_| {
+        //     msgs.with(|m| {
+        //         let c = m.chunks_count;
+        //         trace!("== memo(room msgs count: {c})");
+        //         c
+        //     })
+        // });
         let owner = accs_list.remove(0);
         let _msgs_id = SignalGet::id(&msgs);
         // println!("ROOM MSGS SIGNAL ID: {msgs_id:#?}");
@@ -75,8 +81,9 @@ impl RoomViewData {
             last_msg: cx.create_rw_signal(None),
             common_data: APP.with(|gs| gs.common_data.clone()),
             get_update: cx.create_rw_signal(RoomMsgUpt::NoUpdate),
-            msgs_count,
-            is_active: cx.create_rw_signal(Cell::new(false))
+            msgs_count: Cell::new(0),
+            is_active: cx.create_rw_signal(Cell::new(false)),
+            // display_state: todo!(),
         }
     }
 
@@ -95,6 +102,11 @@ impl RoomViewData {
             }
         })
     }
+
+    // /// Use to apply on BTreeMap of loaded messages on room tab view.
+    // pub fn get_msg_range_to_display(&self) -> Range<Ulid> {
+    //     self.display_state.with_untracked(|ds| ds.get_range_to_display())
+    // }
 }
 
 
@@ -297,5 +309,43 @@ impl IntoView for RoomViewData {
                 };
             })
             .into_any()
+    }
+}
+
+// MARK: Display St.
+
+/// Track what to show up on the screen.
+#[derive(Debug, Default)]
+pub struct DisplayState {
+    pub total_loaded_range: Range<Ulid>,
+    pub what_to_load_after_back: Range<Ulid>,
+
+}
+
+impl DisplayState {
+    /// Change whole range.
+    pub fn update_loaded_range(&mut self, start: Ulid, end: Ulid) {
+        self.total_loaded_range.start = start;
+        self.total_loaded_range.end = end;
+    }
+
+    /// Add older messages to range (chunks?).
+    pub fn add_to_start(&mut self, val: Ulid) {
+        self.total_loaded_range.start = val;
+    }
+    
+    /// Add newer messages to range.
+    pub fn add_to_end(&mut self, val: Ulid) {
+        self.total_loaded_range.end = val;
+    }
+
+    /// Change `what_to_load_after_back` field to sensible number(20).
+    pub fn calculate_next_view_range(&self) {
+        todo!()
+    }
+
+    /// Use to apply on BTreeMap of loaded messages on room tab view.
+    pub fn get_range_to_display(&self) -> Range<Ulid> {
+        self.what_to_load_after_back.clone()
     }
 }

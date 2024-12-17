@@ -6,7 +6,7 @@ use ulid::Ulid;
 
 use crate::{util::Id, view_data::msg::MsgViewData};
 
-// MARK: RoomChunks
+// MARK: Chunks
 
 /// Struct holding info regarding msgs for the room.
 /// 
@@ -165,46 +165,6 @@ impl RoomMsgChunks {
         self.chunks_count.saturating_sub(1) > self.oldest_display_chunk_idx.get()
     }
 
-    // // #[deprecated]
-    // /// Load room chunks in range until `last_chunk_on_display` + one.
-    // pub fn load_next(&self) -> &[MsgChunk] {
-    //     debug!("fn: load_next");
-    //     // -- Check how many chunks is loaded and return if no more left
-    //     if self.chunks_count == 0 {
-    //         trace!("fn: load_next: nothing to load");
-    //         return &[]
-    //     }
-    //     // -- Load another one
-    //     trace!("self.last_chunk_on_display: {}", self.oldest_display_chunk_idx.get());
-    //     let range = {
-    //         // -- Subtract 1 from chunk_count as index starts from 0, not 1
-    //         let display_idx = self.oldest_display_chunk_idx.get();
-    //         let chunks_count = self.chunks_count;
-    //         debug!("fn: load_next: {} == {}", display_idx, chunks_count);
-    //         // Case 1: already shown everything (dis_idx == count - 1)
-    //         if display_idx == chunks_count {
-    //             self.oldest_display_chunk_idx.set(display_idx.saturating_sub(1));
-    //             return &self.chunks[(display_idx - 2) as usize..=(chunks_count - 1) as usize]
-    //         }
-    //         // Case 2: still unloaded chunks available (dis_idx < count - 1)
-    //         match display_idx {
-    //             0 => self.chunks.as_slice(),
-    //             1 => {
-    //                 self.oldest_display_chunk_idx.set(display_idx.saturating_sub(1));
-    //                 self.chunks.as_slice()
-    //             },
-    //             other => {
-    //                 self.oldest_display_chunk_idx.set(display_idx.saturating_sub(1));
-    //                 &self.chunks[(other - 2) as usize..=(self.chunks_count - 1) as usize]
-    //             }
-    //         }
-    //     };
-    //     debug!("loaded data:\ntotal chunks: {}\nlast chunk msg count: {}",
-    //         range.len(), range.last().unwrap().count
-    //     );
-    //     range
-    // }
-
     // -------------- v2 impls --------------
 
     /// Only load yougest msg.
@@ -231,7 +191,8 @@ impl RoomMsgChunks {
     }
     
     /// Load everything from particular point onwards (without the `earliest`).
-    pub fn load_new_content(&self, earliest: Option<Ulid>) -> Vec<MsgViewData> {
+    /// When `with_limit` is `yes`, only youngest chunk or 20 msgs with be fetched.
+    pub fn load_new_content(&self, earliest: Option<Ulid>, with_limit: bool) -> Vec<MsgViewData> {
         match earliest {
             Some(last_loaded_msg) => {
                 let mut msg_idx = None;
@@ -263,6 +224,34 @@ impl RoomMsgChunks {
                         };
                         // info!("cidx: {cidx}, msdix: {midx}");
                         let mut fetched_msgs = Vec::with_capacity(20);
+
+                        // -- Return if limit is applied
+                        if with_limit {
+                            // -- Assess if length of the new content is more that one chunk
+                            if self.chunks_count - chunk_idx as u16 > 1 {
+                                // -- Check if last chunk is more that 15 msgs
+                                let last = self.chunks.last().unwrap();
+                                if last.count > 15 {
+                                    // -- Just fetch last chunk (as is sufficientely big)
+                                    fetched_msgs = last.msgs[msg_idx..].to_vec();
+                                    self.set_display(chunk_idx as u16, self.chunks_count - 1);
+                                    return fetched_msgs
+                                }
+                                // -- Fetch last 2 chunks (1 whole or from the new content idx)
+                                let fetch_idx = self.chunks_count as usize - 2;
+                                let fetch_full = chunk_idx != fetch_idx;
+                                self.set_display(fetch_idx as u16, self.chunks_count - 1);
+
+                                for c in &self.chunks[fetch_idx..] {
+                                    // TODO: impl check for earlier chunk if all msgs can be fetched
+                                    //       or just those after msg_idx
+                                    for m in &c.msgs[..] { 
+                                        fetched_msgs.push(m.clone());
+                                    }
+                                }    
+                            }
+                        }
+                        
                         // -- Fetch rest of the chunk
                         let chunk = self.chunks.get(chunk_idx).unwrap(); // Safety: chunk_idx was check before
                         fetched_msgs = chunk.msgs[msg_idx..].to_vec();
@@ -284,7 +273,7 @@ impl RoomMsgChunks {
                 Vec::with_capacity(0)
             },
             None => {
-                let mut fetched_msgs = vec!();
+                let mut fetched_msgs = Vec::with_capacity(20);
                 // -- Load only last chunk or 2 (if last is less than 15 msgs)
                 match self.chunks_count {
                     0 => (),
@@ -359,50 +348,6 @@ impl RoomMsgChunks {
         self.youngest_display_chunk_idx.set(youngest_idx);
         self.oldest_display_chunk_idx.set(oldest_idx)
     }
-    
-    // /// Reload loaded chunks (as a result of new/changed message).
-    // pub fn reload(&self) -> &[MsgChunk] {
-    //     debug!("fn: reload");
-    //     // -- Check how many chunks is loaded and return if no more left
-    //     if self.chunks_count == 0 {
-    //         trace!("fn: reload: nothing to reload");
-    //         return &[]
-    //     }
-    //     let display_idx = self.oldest_display_chunk_idx.get();
-    //     trace!("self.last_chunk_on_display: {display_idx}");
-
-    //     if self.chunks_count == 1 {
-    //         trace!("fn: reload: just 1 chunk total");
-    //         self.oldest_display_chunk_idx.set(0); // TODO: check if not already set
-    //         return self.chunks.as_slice()
-    //     }
-
-    //     let reloaded = {
-    //         // -- Subtract 1 from chunk_count as index starts from 0, not 1
-    //         let chunks_count = self.chunks_count;
-    //         let last_chunk_msg_count = self.chunks.last().unwrap().count;
-    //         debug!("fn: reload: {} == {}", display_idx, chunks_count);
-    //         // Case 1: already shown everything (dis_idx == count - 1)
-    //         // if display_idx == chunks_count {
-    //         //     return &self.chunks[(display_idx - 1) as usize..=(chunks_count - 1) as usize]
-    //         // }
-    //         // Case 2: still unloaded chunks available (dis_idx < count - 1)
-    //         match display_idx {
-    //             0 | 1 => self.chunks.as_slice(),
-    //             other if last_chunk_msg_count > 18 => {
-    //                 &self.chunks[(other - 1) as usize..=(self.chunks_count - 1) as usize]
-    //             },
-    //             other => {
-    //                 self.oldest_display_chunk_idx.set(display_idx.saturating_sub(1));
-    //                 &self.chunks[(other - 2) as usize..=(self.chunks_count - 1) as usize]
-    //             },
-    //         }
-    //     };
-    //     debug!("reloaded data:\ntotal chunks: {}\nlast chunk msg count: {}",
-    //         reloaded.len(), reloaded.last().unwrap().count
-    //     );
-    //     reloaded
-    // }
 
     /// Returns reference to last Msg inserted.
     pub fn last_msg(&self) -> Option<&MsgViewData> {
@@ -461,6 +406,18 @@ impl RoomMsgChunks {
                 trace!("find_msg: None");
                 None
             })
+    }
+
+    /// Evaluate if need to apply focus on display msg vector.
+    pub fn need_focus(&self) -> Option<usize> {
+        // Return if less that 2 chunks
+        if self.chunks_count < 2 { return None }
+        // Return if last chunk have less than 18 messages
+        if self.chunks.last().unwrap().count < 18 { return None }
+        // Calculate index
+
+
+        todo!()
     }
 }
 
@@ -719,7 +676,7 @@ mod tests {
 
         // ------------------------------------------------------------
         // -- from_2_case
-        let from_2_case_res = chunks.load_new_content(Some(from_2_case));
+        let from_2_case_res = chunks.load_new_content(Some(from_2_case), false);
         println!("from_2_case_res len: {}", from_2_case_res.len());
         println!("from_2_case_res display status: oldest idx: {}, yougest idx: {}",
             chunks.oldest_display_chunk_idx.get(),
@@ -736,7 +693,7 @@ mod tests {
 
         // ------------------------------------------------------------
         // -- from_3_case
-        let from_3_case_res = chunks.load_new_content(Some(from_3_case));
+        let from_3_case_res = chunks.load_new_content(Some(from_3_case), false);
         println!("from_3_case_res len: {}", from_3_case_res.len());
         println!("from_3_case_res display status: oldest idx: {}, yougest idx: {}",
             chunks.oldest_display_chunk_idx.get(),
@@ -753,7 +710,7 @@ mod tests {
 
         // ------------------------------------------------------------
         // -- from_19_case
-        let from_19_case_res = chunks.load_new_content(Some(from_19_case));
+        let from_19_case_res = chunks.load_new_content(Some(from_19_case), false);
         println!("from_19_case_res len: {}", from_19_case_res.len());
         println!("from_19_case_res display status: oldest idx: {}, yougest idx: {}",
             chunks.oldest_display_chunk_idx.get(),
@@ -770,7 +727,7 @@ mod tests {
 
         // ------------------------------------------------------------
         // -- from_20_case
-        let from_20_case_res = chunks.load_new_content(Some(from_20_case));
+        let from_20_case_res = chunks.load_new_content(Some(from_20_case), false);
         println!("from_20_case_res len: {}", from_20_case_res.len());
         println!("from_20_case_res display status: oldest idx: {}, yougest idx: {}",
             chunks.oldest_display_chunk_idx.get(),
@@ -787,7 +744,7 @@ mod tests {
 
         // ------------------------------------------------------------
         // -- from_21_case
-        let from_21_case_res = chunks.load_new_content(Some(from_21_case));
+        let from_21_case_res = chunks.load_new_content(Some(from_21_case), false);
         println!("from_21_case_res len: {}", from_21_case_res.len());
         println!("from_21_case_res display status: oldest idx: {}, yougest idx: {}",
             chunks.oldest_display_chunk_idx.get(),
@@ -804,7 +761,7 @@ mod tests {
 
         // ------------------------------------------------------------
         // -- from_50_case
-        let from_50_case_res = chunks.load_new_content(Some(from_50_case));
+        let from_50_case_res = chunks.load_new_content(Some(from_50_case), false);
         println!("from_50_case_res len: {}", from_50_case_res.len());
         println!("from_50_case_res display status: oldest idx: {}, yougest idx: {}",
             chunks.oldest_display_chunk_idx.get(),
@@ -821,7 +778,7 @@ mod tests {
 
         // ------------------------------------------------------------
         // -- only_last_case
-        let no_never_msg_case_res = chunks.load_new_content(Some(no_never_msg_case));
+        let no_never_msg_case_res = chunks.load_new_content(Some(no_never_msg_case), false);
         println!("no_never_msg_case_res len: {}", no_never_msg_case_res.len());
         println!("no_never_msg_case_res display status: oldest idx: {}, yougest idx: {}",
             chunks.oldest_display_chunk_idx.get(),

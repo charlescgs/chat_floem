@@ -48,12 +48,14 @@ pub const BUTTON_ACTIVE: Color = Color::rgb8(250, 0, 0);
 
 // -----------------------
 fn main() {
-    Subscriber::new_with_max_level(Level::TRACE).with_short_time_format();
+    Subscriber::new_with_max_level(Level::TRACE);
+    
     provide_context(RwSignal::new(None::<Id>));     // Msg tracker
     provide_context(RwSignal::new(MsgEvent::None)); // Msg load tracker
     provide_context(RwSignal::new(None::<Ulid>));   // New room id editor signal
     provide_context(Trigger::new());                // Msg send signal
     provide_context(RwSignal::new(false));          // Load more signal
+    
     launch_with_config(app_view)
 }
 

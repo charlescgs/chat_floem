@@ -57,13 +57,11 @@ pub fn toolbar_view_v2() -> impl IntoView {
     let msg_event = use_context::<RwSignal<MsgEvent>>().unwrap();
     let new_room_editor_doc = use_context::<RwSignal<Option<Ulid>>>().unwrap();
     let show_load_more_button = use_context::<RwSignal<bool>>().unwrap();
-    let show_load_memo = create_memo(move |_| {
-        show_load_more_button.get()
-    });
+    let show_load_memo = create_memo(move |_| show_load_more_button.get());
     // -- Action to create test room on click
     create_effect(move |_| {
-        trace!("->> effect for `New Menu`");
         let new = new_list_signal.get();
+        trace!("->> effect for `New Menu`: {new:#?}");
         match new {
             NewList::None => { trace!("Clicked NewList::None"); },
             NewList::Room => {
@@ -117,9 +115,13 @@ pub fn toolbar_view_v2() -> impl IntoView {
                                     msgs.append_new_msg(msg.clone());
                                     info!("New msg appended!")
                                 });
+                                let old = room.msgs_count.get();
+                                room.msgs_count.set(old + 1);
+
                                 room.last_msg.set(Some(msg));
                                 // -- Notify subscribers about new msg event
                                 msg_event.set(MsgEvent::NewFor(room.room_id.id));
+                                // msg_event
                             }
                         })
                     });
@@ -154,13 +156,12 @@ pub fn toolbar_view_v2() -> impl IntoView {
                             // -- Append msg onto `msgs` and `last_msg`
                             if let Some(room) = rooms.get(&active.idx) {
                                 room.msgs.update(|chunks| {
-                                    // batch(|| {
-                                        for msg in msgs {
-                                            chunks.append_new_msg(msg);
-                                        }
-                                    // });
+                                    for msg in msgs {
+                                        chunks.append_new_msg(msg);
+                                    }
                                 });
-                                info!("{} new msgs appended!", room.msgs_count.get_untracked());
+                                info!("{} new msgs appended!", room.msgs_count.get());
+                                room.msgs_count.set(room.msgs.with_untracked(|m| m.total_msgs));
                                 room.last_msg.set(Some(last_msg));
                                 // -- Notify subscribers about new msg event
                                 msg_event.set(MsgEvent::NewManyFor(room.room_id.id));

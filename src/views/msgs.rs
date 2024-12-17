@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use floem::peniko::Color;
 use floem::prelude::*;
@@ -6,6 +7,7 @@ use floem::reactive::{create_effect, use_context, Trigger};
 use floem::taffy::prelude::TaffyGridLine;
 use floem::taffy::{AlignItems, FlexDirection, GridPlacement, Line};
 use floem::views::{dyn_stack, stack, tab, Decorators, ScrollExt};
+use im::Vector;
 use tracing_lite::{debug, info, trace, warn};
 use ulid::Ulid;
 
@@ -95,7 +97,7 @@ pub fn msgs_view_v2() -> impl View {
                 }
             }},
             move || {
-                trace!("tab: each_fn");
+                trace!("tab: each_fn"); // FIXME: called twice during startup
                 rooms.get()
             },
             |(idx, _)| {
@@ -106,55 +108,65 @@ pub fn msgs_view_v2() -> impl View {
             move |(idx, room)| {
                 let scroll_to_end = Trigger::new();
                 // -- Tab logic and state
-                let get_upt = room.get_update;
-                // -- Room messages
-                let room_chunks = room.msgs;
-                // let x = create_updater(compute, on_change);
-                let msgs_count = room.msgs_count;
                 // let cx = APP.with(|app| app.provide_scope());
-                let msgs_btree = RwSignal::new(BTreeMap::new());
-                // let _scroll_rect = RwSignal::new(Point::ZERO);
-                let is_active = room.is_active;
+                let this_room = Rc::new(room);
+                let get_upt = this_room.get_update;
+                // -- Room messages
+                let room_chunks = this_room.msgs;
+                // let msgs_count = this_room.msgs_count;
+                let msgs_vec = RwSignal::new(Vector::new());
+                
+                // let msgs_vec = RwSignal::new(Vector::new());
+                let is_active = this_room.is_active;
                 // let load_more = Trigger::new();
-                // let _reload = Trigger::new();
-                let room_idx = room.idx();
+                let room_idx = this_room.idx();
                 // -- Tracks how many chunks is in this room
                 
+                let room = this_room.clone();
                 create_effect(move |_| {
                     trace!("== effect: scroll end on tab switch for {room_idx}");
                     is_active.with(|cell| {
+                        // 
                         if cell.get() == true {
+                            // if let Some(id) = room_chunks.with_untracked(|rc| {
+                            //     // rc.
+                            // }) {
+                            //     msgs_vec.update(|mv| {
+
+                            //         // bt.split_off(&room.clone().get_msg_range_to_display().start);
+                            //     });
+                            // }
                             scroll_to_end.notify();
                         }
                     });
                 });
 
+                let room = this_room.clone();
                 create_effect(move |_| {
                     debug!("== effect: msgs tab({idx})");
                     match get_upt.get() {
                         RoomMsgUpt::NoUpdate => {},
                         RoomMsgUpt::LoadMore => {
                             debug!("RoomMsgUpt::LoadMore");
-                            if room.msgs_count.get_untracked() > msgs_btree.with_untracked(|btree| btree.len() as u16) {
-                                msgs_btree.update(|btree| {
+                            if room.msgs_count.get() > msgs_vec.with_untracked(|mv| mv.len() as u16) {
+                                msgs_vec.update(|mv| {
                                     room_chunks.with_untracked(|chunks| {
                                         for each in chunks.load_older_chunk() {
-                                            btree.insert(each.id.id, each.clone());
+                                            mv.push_back(each.clone());
                                         }
                                     })
                                 });
                             }
                         },
                         RoomMsgUpt::NewMany => {
-                            msgs_btree.update(|btree| {
+                            msgs_vec.update(|mv| {
                                 room_chunks.with_untracked(|chunks| {
                                     debug!("RoomMsgUpt::NewMany: {idx} with new msgs, loading new content");
-                                    let current_youngest_msg = btree.keys().last().cloned();
-                                    btree.extend(
+                                    let current_youngest_msg = mv.last().map(|m| m.id.id); // FIXME!
+                                    mv.extend(
                                         chunks
-                                            .load_new_content(current_youngest_msg)
+                                            .load_new_content(current_youngest_msg, true)
                                             .into_iter()
-                                            .map(|m| (m.id.id, m))
                                     );
                                 })
                             });
@@ -162,8 +174,8 @@ pub fn msgs_view_v2() -> impl View {
                         RoomMsgUpt::New => {
                             if let Some(new_msg) = room.msgs.with_untracked(|chunks| chunks.last_msg().cloned()) {
                                 debug!("RoomMsgUpt::New: {idx} with new msg: {}", new_msg.id.id);
-                                msgs_btree.update(|v| { v.insert(new_msg.id.id, new_msg); });
-                                println!("msgs vector len: {}", msgs_btree.with_untracked(|btree| btree.len()));
+                                msgs_vec.update(|v| v.push_back(new_msg));
+                                println!("msgs vector len: {}", msgs_vec.with_untracked(|mv| mv.len()));
                                 scroll_to_end.notify();
                             } else {
                                 warn!("RoomMsgUpt: {idx} last msg fn returned None")
@@ -172,8 +184,9 @@ pub fn msgs_view_v2() -> impl View {
                         RoomMsgUpt::Changed(msg_id) => {
                             if let Some(changed_msg) = room_chunks.with_untracked(|rc| rc.find_msg(msg_id).cloned()) {
                                 debug!("RoomMsgUpt::Changed: {idx} with upt msg: {}", changed_msg.id.id);
-                                msgs_btree.update(|btree|
-                                    if let Some(msg) = btree.get_mut(&changed_msg.id.id) {
+                                let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&changed_msg)) else { return };
+                                msgs_vec.update(|mv|
+                                    if let Some(msg) = mv.get_mut(idx) {
                                         *msg = changed_msg;
                                     }
                                 );
@@ -181,19 +194,33 @@ pub fn msgs_view_v2() -> impl View {
                         },
                         RoomMsgUpt::Deleted(ref msg_id) => {
                             debug!("RoomMsgUpt::Deleted: {idx} with {msg_id}");
-                            msgs_btree.update(|btree| { btree.remove(&msg_id); });
+                            let mut del_idx = 0;
+                            if let Some(del_msg) = msgs_vec.with_untracked(|v| v.iter().find(|m| &m.id.id == msg_id).cloned()) {
+                                let del_idx_found =
+                                    if let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&del_msg)) {
+                                        del_idx = idx;
+                                        debug!("RoomMsgUpt: {idx} with {}", del_msg.id.id);
+                                        true
+                                    } else {
+                                        false
+                                    };
+                                if del_idx_found {
+                                    msgs_vec.update(|v| { v.remove(del_idx); });
+                                }
+                            }
                         }
                     }
                 });
                 
                 dyn_stack(
                     move || {
-                        let chunks = msgs_btree.get();
+                        let chunks = msgs_vec.get(); // FIXME: called twice during new msg
                         info!("->> dyn_stack: msg(each_fn) (with {} msg/s)", chunks.len());
                         // for (each_id, _) in chunks.iter() {
                         //     println!("{each_id}")
                         // }
-                        chunks.into_iter()
+                        chunks.into_iter().enumerate()
+                        
                     },
                     |(idx, msg)| {
                         info!("dyn_stack: msg(key_fn) for {}", msg.id.id);
@@ -226,9 +253,9 @@ pub fn msgs_view_v2() -> impl View {
                         .propagate_pointer_wheel(true)
                     )
                     .on_scroll(move |rect| {
-                        // println!("{:?}", rect.origin());
                         if rect.y0 == 0.0 {
-                            if msgs_count.get() > 20 {
+                            println!("{:?}", rect.origin());
+                            if this_room.msgs_count.get() > 20 {
                                 // println!("on_scroll: load_more true!");
                                 show_load_more_button.set(true);
                                 // load_more.notify();
@@ -240,7 +267,7 @@ pub fn msgs_view_v2() -> impl View {
                     })
                     .scroll_to_percent(move || {
                         scroll_to_end.track();
-                        trace!("scroll_to_end notified for {}", room.idx());
+                        trace!("scroll_to_end notified for {}", room_idx);
                         100.0
                     })
         }).debug_name("msgs tabs")

@@ -140,7 +140,7 @@ impl IntoView for EditorViewData {
                 // -- Save it as chunk
                 let is_success = rooms.with_untracked(|rooms| {
                     if let Some(room) = rooms.get(&active_room.idx) {
-                        room.msgs.update(|r| r.append_new_msg(new_msg.clone()));
+                        room.msgs.update(|r| r.append_new_msg(new_msg));
                         trace!("Inserted new Msg to room");
                         return true
                     } else {
