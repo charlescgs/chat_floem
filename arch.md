@@ -67,5 +67,5 @@ Update comes from the server to backend -> to frontend([UISession]) -> notif -> 
 - [Chunk] is struct holding up to 20 msgs in vec with metadata
 - [Display] is:
     Option 1: [Vector] holding msgs
-    Option 2: Struct with focus-like capabilites holding msgs and implementing `IntoIterator` trait
+    *Option 2*: Struct with focus-like capabilites holding msgs  and implementing `IntoIterator` trait
     Option 3: [BTreeMap] with msg_id as keys

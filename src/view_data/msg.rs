@@ -8,6 +8,7 @@ use floem::prelude::*;
 use floem::ViewId;
 use im::{vector, Vector};
 use tracing_lite::info;
+use ulid::Ulid;
 
 use crate::cont::msg::Text;
 use crate::util::{Id, Tb};
@@ -96,6 +97,10 @@ impl MsgViewData {
             view_id: ViewId::new(),
             common_data: APP.with(|gs| gs.common_data.clone())
         }
+    }
+
+    pub fn ulid(&self) -> Ulid {
+        self.id.id
     }
 }
 

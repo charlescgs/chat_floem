@@ -29,17 +29,6 @@ fn last_msg_test() {
 
 #[test]
 fn update_one_test() {
-    // let id1 = Id::new(Tb::Msg);
-    // std::thread::sleep(Duration::from_millis(2));
-    // let id2 = Id::new(Tb::Msg);
-    // std::thread::sleep(Duration::from_millis(2));
-    // let id3 = Id::new(Tb::Msg);
-    // std::thread::sleep(Duration::from_millis(2));
-    // assert!(id1 < id2);
-    // assert!(id1 <= id2);
-    // assert!(id1 == id1);
-    // assert!(id2 < id3);
-    // assert!(id1 < id3);
     let act_room = Id::new(Tb::Room);
     let acc = Account {
         acc_id: Id::new(Tb::Acc),
@@ -67,14 +56,6 @@ fn update_one_test() {
     for each in &msgs_vec {
         room_chunks.append_new_msg(each.clone());
     }
-    // 3. Print it and assert.
-    // println!("->> Before:");
-    // println!("room_id: {}", room_chunks.room_id);
-    // println!("anymore_available: {}", room_chunks.anymore_available());
-    // // println!("msgs_vec len: {len}");
-    // println!("chunks_count: {}", room_chunks.chunks_count);
-    // println!("last_chunk_on_display: {}", room_chunks.last_chunk_on_display.get());
-    // println!("total_msgs: {}", room_chunks.total_msgs);
 
     room_chunks.update_one(&msg_to_upt);
     let fetched = room_chunks.find_msg(msg_id).unwrap();

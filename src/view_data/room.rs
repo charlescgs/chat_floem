@@ -61,7 +61,6 @@ impl RoomViewData {
         let msgs_count = cx.create_rw_signal(0);
         let owner = accs_list.remove(0);
         let _msgs_id = SignalGet::id(&msgs);
-        // println!("ROOM MSGS SIGNAL ID: {msgs_id:#?}");
         Self {
             room_idx: RoomTabIdx::new(id.id),
             msgs,

@@ -126,16 +126,7 @@ pub fn msgs_view() -> impl View {
                 create_effect(move |_| {
                     trace!("== effect: scroll end on tab switch for {room_idx}");
                     is_active.with(|cell| {
-                        // 
                         if cell.get() == true {
-                            // if let Some(id) = room_chunks.with_untracked(|rc| {
-                            //     // rc.
-                            // }) {
-                            //     msgs_vec.update(|mv| {
-
-                            //         // bt.split_off(&room.clone().get_msg_range_to_display().start);
-                            //     });
-                            // }
                             scroll_to_end.notify();
                         }
                     });
@@ -250,14 +241,11 @@ pub fn msgs_view() -> impl View {
                 )
                 .on_scroll(move |rect| {
                     if rect.y0 == 0.0 {
-                        println!("{:?} | {} msgs ", rect.origin(), this_room.msgs_count.get_untracked());
                         if this_room.msgs_count.get_untracked() > 20 {
                             println!("on_scroll: load_more true!");
                             show_load_more_button.set(true);
-                            // load_more.notify();
                         }
                     } else {
-                        // println!("on_scroll: load_more false!");
                         show_load_more_button.set(false);
                     }
                 })
