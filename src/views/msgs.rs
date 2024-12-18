@@ -40,7 +40,7 @@ pub fn msgs_view() -> impl View {
     let rooms = APP.with(|app| app.rooms);
     let active_room = APP.with(|app| app.active_room);
     let rooms_tabs = APP.with(|app| app.rooms_tabs);
-    let show_load_more_button = use_context::<RwSignal<bool>>().unwrap();
+    // let show_load_more_button = use_context::<RwSignal<bool>>().unwrap();
 
     // -- Effect and derives needed for the view
 
@@ -107,6 +107,10 @@ pub fn msgs_view() -> impl View {
 // MARK: tab
             move |(idx, room)| {
                 let scroll_to_end = Trigger::new();
+                create_effect(move |_| {
+                    scroll_to_end.track();
+                    println!("EFFECT right AFTER `scroll_to_end`");
+                });
                 // -- Tab logic and state
                 // let cx = APP.with(|app| app.provide_scope());
                 let this_room = Rc::new(room);
@@ -239,16 +243,16 @@ pub fn msgs_view() -> impl View {
                     .shrink_to_fit()
                     .propagate_pointer_wheel(true)
                 )
-                .on_scroll(move |rect| {
-                    if rect.y0 == 0.0 {
-                        if this_room.msgs_count.get_untracked() > 20 {
-                            println!("on_scroll: load_more true!");
-                            show_load_more_button.set(true);
-                        }
-                    } else {
-                        show_load_more_button.set(false);
-                    }
-                })
+                // .on_scroll(move |rect| {
+                //     if rect.y0 == 0.0 {
+                //         if this_room.msgs_count.get_untracked() > 20 {
+                //             println!("on_scroll: load_more true!");
+                //             show_load_more_button.set(true);
+                //         }
+                //     } else {
+                //         show_load_more_button.set(false);
+                //     }
+                // })
                 .scroll_to_percent(move || {
                     scroll_to_end.track();
                     trace!("scroll_to_end notified for {}", room_idx);

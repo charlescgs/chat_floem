@@ -124,9 +124,7 @@ impl DisplayChunks {
                         self.vec.pop_back().unwrap()
                     },
                     // Other case
-                    _ => {
-                        self.vec.remove(idx)
-                    }
+                    _ => self.vec.remove(idx)
                 };
                 assert!(r.ulid() == del);
                 self.total_stored -= 1;
@@ -148,9 +146,12 @@ impl DisplayChunks {
     /// Fetch another full [Chunk](super).
     pub fn append_older_chunk(&mut self, chunk: &[MsgViewData]) {
         let chunk_len = chunk.len();
-        chunk.iter().rev().map(|msg| self.vec.push_front(msg.clone()));
+        for msg in chunk.iter().rev() {
+            self.vec.push_front(msg.clone());
+        }
         self.start.1 = self.vec.front().unwrap().ulid();
-        self.total_stored += chunk_len as u16;
+        self.total_stored += chunk_len as u16
+        // assert_eq!(self.total_stored, self.vec.len() as u16);
     }
     
     /// Fetch another full [Chunk](super).
@@ -165,7 +166,7 @@ impl DisplayChunks {
         // Override self with joined collection
         self.vec = new_front;
         self.start.1 = self.vec.front().unwrap().ulid();
-        self.total_stored += chunk_len as u16;
+        self.total_stored += chunk_len as u16
     }
 }
 
@@ -339,7 +340,7 @@ fn display_append_older_chunk_test() {
     display.append_older_chunk(&msg_vec[20..40]);
     display_alt.append_older_chunk_alt(&msg_vec[20..40]);
     assert_eq!(display.total_stored, 42);
-    assert_eq!(display.vec.front().unwrap().ulid(), msg_vec[20].ulid());
+    assert_eq!(display.start.1, msg_vec[20].ulid());
     assert_eq!(display_alt.total_stored, 42);
     assert_eq!(display_alt.vec.front().unwrap().ulid(), msg_vec[20].ulid());
     // Display on 62
