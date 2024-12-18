@@ -211,16 +211,12 @@ pub fn msgs_view() -> impl View {
                         }
                     }
                 });
-                
+// MARK: dyn_stack                
                 dyn_stack(
                     move || {
                         let chunks = msgs_vec.get(); // FIXME: called twice during new msg
                         info!("->> dyn_stack: msg(each_fn) (with {} msg/s)", chunks.len());
-                        // for (each_id, _) in chunks.iter() {
-                        //     println!("{each_id}")
-                        // }
                         chunks.into_iter().enumerate()
-                        
                     },
                     |(idx, msg)| {
                         info!("dyn_stack: msg(key_fn) for {}", msg.id.id);
@@ -231,45 +227,45 @@ pub fn msgs_view() -> impl View {
                         let is_owner = msg.room_owner;
                         msg.style(move |s| s.apply_if(is_owner,
                             |s| s.align_self(AlignItems::End)
-                            ))
+                        ))
+                    }
+                ).debug_name("msgs list")
+                .style(|s| s
+                    .flex_direction(FlexDirection::Column)
+                    .width_full()
+                    .align_items(AlignItems::Start)
+                    .column_gap(5.)
+                )
+                .scroll()
+                .debug_name("msgs scroll")
+                .style(|s| s
+                    .size_full()
+                    .padding(5.)
+                    .padding_right(7.)
+                )
+                .scroll_style(|s| s
+                    .handle_thickness(6.)
+                    .shrink_to_fit()
+                    .propagate_pointer_wheel(true)
+                )
+                .on_scroll(move |rect| {
+                    if rect.y0 == 0.0 {
+                        println!("{:?} | {} msgs ", rect.origin(), this_room.msgs_count.get_untracked());
+                        if this_room.msgs_count.get_untracked() > 20 {
+                            println!("on_scroll: load_more true!");
+                            show_load_more_button.set(true);
+                            // load_more.notify();
                         }
-                    ).debug_name("msgs list")
-                    .style(|s| s
-                        .flex_direction(FlexDirection::Column)
-                        .width_full()
-                        .align_items(AlignItems::Start)
-                        .column_gap(5.)
-                    )
-                    .scroll()
-                    .debug_name("msgs scroll")
-                    .style(|s| s
-                        .size_full()
-                        .padding(5.)
-                        .padding_right(7.)
-                    )
-                    .scroll_style(|s| s
-                        .handle_thickness(6.)
-                        .shrink_to_fit()
-                        .propagate_pointer_wheel(true)
-                    )
-                    .on_scroll(move |rect| {
-                        if rect.y0 == 0.0 {
-                            println!("{:?}", rect.origin());
-                            if this_room.msgs_count.get() > 20 {
-                                // println!("on_scroll: load_more true!");
-                                show_load_more_button.set(true);
-                                // load_more.notify();
-                            }
-                        } else {
-                            // println!("on_scroll: load_more false!");
-                            show_load_more_button.set(false);
-                        }
-                    })
-                    .scroll_to_percent(move || {
-                        scroll_to_end.track();
-                        trace!("scroll_to_end notified for {}", room_idx);
-                        100.0
-                    })
+                    } else {
+                        // println!("on_scroll: load_more false!");
+                        show_load_more_button.set(false);
+                    }
+                })
+                .scroll_to_percent(move || {
+                    scroll_to_end.track();
+                    trace!("scroll_to_end notified for {}", room_idx);
+                    100.0
+                })
         }).debug_name("msgs tabs")
         .style(|s| s.size_full())
         // .on_resize(move |_rect| {

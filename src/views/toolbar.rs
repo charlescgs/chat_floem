@@ -115,8 +115,7 @@ pub fn toolbar_view() -> impl IntoView {
                                     msgs.append_new_msg(msg.clone());
                                     info!("New msg appended!")
                                 });
-                                let old = room.msgs_count.get();
-                                room.msgs_count.set(old + 1);
+                                room.update_msg_count();
 
                                 room.last_msg.set(Some(msg));
                                 // -- Notify subscribers about new msg event
@@ -141,7 +140,7 @@ pub fn toolbar_view() -> impl IntoView {
                                     room.owner.clone()
                                 } else {
                                     let keys_vec = room.members.keys().cloned().collect::<Vec<_>>();
-                                    println!("key_vec len: {}", keys_vec.len());
+                                    // println!("key_vec len: {}", keys_vec.len());
                                     let key = keys_vec.get(rand as usize - 1).cloned().unwrap();
                                     room.members.get(&key).unwrap().clone()
                                 }
@@ -160,8 +159,8 @@ pub fn toolbar_view() -> impl IntoView {
                                         chunks.append_new_msg(msg);
                                     }
                                 });
+                                room.update_msg_count();
                                 info!("{} new msgs appended!", room.msgs_count.get());
-                                room.msgs_count.set(room.msgs.with_untracked(|m| m.total_msgs));
                                 room.last_msg.set(Some(last_msg));
                                 // -- Notify subscribers about new msg event
                                 msg_event.set(MsgEvent::NewManyFor(room.room_id.id));

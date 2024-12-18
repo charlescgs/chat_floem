@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use floem::reactive::{batch, create_effect, Memo, Trigger};
+use floem::reactive::{batch, create_effect, provide_context, Memo, ReadSignal, Trigger};
 use floem::{prelude::*, ViewId};
 use tracing_lite::{debug, trace, warn};
 use ulid::Ulid;
@@ -31,8 +31,8 @@ pub struct RoomViewData {
 
     pub owner: Account,
     pub members: HashMap<Ulid, Account>,
-    // pub msgs_count: Memo<u16>,
-    pub msgs_count: Cell<u16>,
+    // pub msgs_count: ReadSignal<u16>,
+    pub msgs_count: RwSignal<u16>,
     pub description: RwSignal<Option<String>>,
     pub msgs: RwSignal<RoomMsgChunks>,
     
@@ -58,13 +58,7 @@ impl RoomViewData {
         });
         let id = Id::new(Tb::Room);
         let msgs = cx.create_rw_signal(RoomMsgChunks::new(id.clone()));
-        // let msgs_count = cx.create_memo(move |_| {
-        //     msgs.with(|m| {
-        //         let c = m.chunks_count;
-        //         trace!("== memo(room msgs count: {c})");
-        //         c
-        //     })
-        // });
+        let msgs_count = cx.create_rw_signal(0);
         let owner = accs_list.remove(0);
         let _msgs_id = SignalGet::id(&msgs);
         // println!("ROOM MSGS SIGNAL ID: {msgs_id:#?}");
@@ -81,7 +75,7 @@ impl RoomViewData {
             last_msg: cx.create_rw_signal(None),
             common_data: APP.with(|gs| gs.common_data.clone()),
             get_update: cx.create_rw_signal(RoomMsgUpt::NoUpdate),
-            msgs_count: Cell::new(0),
+            msgs_count,
             is_active: cx.create_rw_signal(Cell::new(false)),
             // display_state: todo!(),
         }
@@ -103,10 +97,13 @@ impl RoomViewData {
         })
     }
 
-    // /// Use to apply on BTreeMap of loaded messages on room tab view.
-    // pub fn get_msg_range_to_display(&self) -> Range<Ulid> {
-    //     self.display_state.with_untracked(|ds| ds.get_range_to_display())
-    // }
+    /// Compare chunks msg count and update [Cell] if does not match.
+    pub fn update_msg_count(&self) {
+        let count = self.msgs.with_untracked(|chunks| chunks.total_msgs);
+        if count != self.msgs_count.get_untracked() {
+            self.msgs_count.set(count)
+        }
+    }
 }
 
 

@@ -6,7 +6,7 @@ use editor::text_document::TextDocument;
 use editor::Editor;
 use floem::{prelude::*, AnyView, ViewId};
 use floem::taffy::{prelude::TaffyGridLine, GridPlacement, Line};
-use floem::reactive::{create_effect, use_context, Trigger};
+use floem::reactive::{create_effect, use_context, Trigger, WriteSignal};
 use editor::core::{editor::EditType, selection::Selection};
 use editor::text::{default_light_theme, Document, SimpleStyling};
 use tracing_lite::{error, info, trace, warn};
@@ -141,6 +141,7 @@ impl IntoView for EditorViewData {
                 let is_success = rooms.with_untracked(|rooms| {
                     if let Some(room) = rooms.get(&active_room.idx) {
                         room.msgs.update(|r| r.append_new_msg(new_msg));
+                        room.update_msg_count();
                         trace!("Inserted new Msg to room");
                         return true
                     } else {
