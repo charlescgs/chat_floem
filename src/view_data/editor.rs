@@ -36,7 +36,7 @@ pub struct EditorViewData {
 
 impl EditorViewData {
     pub fn new() -> Self {
-        let cx = APP.with(|app| app.provide_scope());
+        let cx = APP.with(|app| app.provide_scope().create_child());
         let active_doc = Rc::new(TextDocument::new(cx, "default text doc"));
         Self {
             view_id: ViewId::new(),

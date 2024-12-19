@@ -107,10 +107,6 @@ pub fn msgs_view() -> impl View {
 // MARK: tab
             move |(idx, room)| {
                 let scroll_to_end = Trigger::new();
-                create_effect(move |_| {
-                    scroll_to_end.track();
-                    println!("EFFECT right AFTER `scroll_to_end`");
-                });
                 // -- Tab logic and state
                 // let cx = APP.with(|app| app.provide_scope());
                 let this_room = Rc::new(room);
@@ -119,22 +115,12 @@ pub fn msgs_view() -> impl View {
                 let room_chunks = this_room.msgs;
                 // let msgs_count = this_room.msgs_count;
                 let msgs_vec = RwSignal::new(Vector::new());
-                
-                // let msgs_vec = RwSignal::new(Vector::new());
                 let is_active = this_room.is_active;
                 // let load_more = Trigger::new();
                 let room_idx = this_room.idx();
                 // -- Tracks how many chunks is in this room
                 
                 let room = this_room.clone();
-                create_effect(move |_| {
-                    trace!("== effect: scroll end on tab switch for {room_idx}");
-                    is_active.with(|cell| {
-                        if cell.get() == true {
-                            scroll_to_end.notify();
-                        }
-                    });
-                });
 
                 let room = this_room.clone();
                 create_effect(move |_| {
@@ -143,7 +129,7 @@ pub fn msgs_view() -> impl View {
                         RoomMsgUpt::NoUpdate => {},
                         RoomMsgUpt::LoadMore => {
                             debug!("RoomMsgUpt::LoadMore");
-                            if room.msgs_count.get() > msgs_vec.with_untracked(|mv| mv.len() as u16) {
+                            if room.msgs_count.get_untracked() > msgs_vec.with_untracked(|mv| mv.len() as u16) {
                                 msgs_vec.update(|mv| {
                                     room_chunks.with_untracked(|chunks| {
                                         for each in chunks.load_older_chunk() {

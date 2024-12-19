@@ -1,10 +1,12 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ops::Range;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use floem::reactive::{batch, create_effect, provide_context, Memo, ReadSignal, Trigger};
+use floem::peniko::{Blob, Format};
+use floem::reactive::{batch, create_effect, provide_context, Memo, ReadSignal, Scope, Trigger};
 use floem::{prelude::*, ViewId};
 use tracing_lite::{debug, trace, warn};
 use ulid::Ulid;
@@ -48,7 +50,7 @@ pub struct RoomViewData {
 
 impl RoomViewData {
     pub fn new_from_click() -> Self {
-        let cx = APP.with(|app| app.provide_scope());
+        let cx = APP.with(|app| app.provide_scope().create_child());
         let mut accs_list = Vec::new();
         APP.with(|app| {
             app.accounts.with_untracked(|accs|
@@ -218,7 +220,6 @@ impl IntoView for RoomViewData {
             })
         }).style(|s| s.max_size_full().text_ellipsis());
 
-
         let last_msg_avatar = dyn_view(move || {
             need_avatar_change.track();
             trace!("dyn_view for avatar");
@@ -235,14 +236,15 @@ impl IntoView for RoomViewData {
                     });
                     img_data.to_vec()
                 }
-            }).style(|s| s.size(50., 50.))
+            })
+            .style(|s| s.size(50., 50.))
         }).style(|s| s
             .border(1.)
             .border_color(Color::NAVY)
             .border_radius(5.)
         );
         
-
+        
         let last_msg_author = label(move || {
             need_label_change.track();
             trace!("label: last_msg_author");
@@ -305,43 +307,5 @@ impl IntoView for RoomViewData {
                 };
             })
             .into_any()
-    }
-}
-
-// MARK: Display St.
-
-/// Track what to show up on the screen.
-#[derive(Debug, Default)]
-pub struct DisplayState {
-    pub total_loaded_range: Range<Ulid>,
-    pub what_to_load_after_back: Range<Ulid>,
-
-}
-
-impl DisplayState {
-    /// Change whole range.
-    pub fn update_loaded_range(&mut self, start: Ulid, end: Ulid) {
-        self.total_loaded_range.start = start;
-        self.total_loaded_range.end = end;
-    }
-
-    /// Add older messages to range (chunks?).
-    pub fn add_to_start(&mut self, val: Ulid) {
-        self.total_loaded_range.start = val;
-    }
-    
-    /// Add newer messages to range.
-    pub fn add_to_end(&mut self, val: Ulid) {
-        self.total_loaded_range.end = val;
-    }
-
-    /// Change `what_to_load_after_back` field to sensible number(20).
-    pub fn calculate_next_view_range(&self) {
-        todo!()
-    }
-
-    /// Use to apply on BTreeMap of loaded messages on room tab view.
-    pub fn get_range_to_display(&self) -> Range<Ulid> {
-        self.what_to_load_after_back.clone()
     }
 }

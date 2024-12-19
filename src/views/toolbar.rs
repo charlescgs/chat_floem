@@ -160,7 +160,7 @@ pub fn toolbar_view() -> impl IntoView {
                                     }
                                 });
                                 room.update_msg_count();
-                                info!("{} new msgs appended!", room.msgs_count.get());
+                                info!("{} new msgs appended!", room.msgs_count.get_untracked());
                                 room.last_msg.set(Some(last_msg));
                                 // -- Notify subscribers about new msg event
                                 msg_event.set(MsgEvent::NewManyFor(room.room_id.id));
