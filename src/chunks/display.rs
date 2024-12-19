@@ -1,8 +1,8 @@
-use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use im::{vector, Vector};
-use tracing_lite::trace;
+use tracing_lite::debug;
 use ulid::Ulid;
 
 use crate::util::{Id, Tb};
@@ -33,7 +33,7 @@ pub struct DisplayChunks {
     pub last: (u16, Ulid),
     /// If any msgs are hidden.
     /// Anything before that index/msg will not be loaded.
-    pub status: DisplayStatus
+    pub status: RefCell<DisplayStatus>
 }
 
 impl DisplayChunks {
@@ -44,7 +44,7 @@ impl DisplayChunks {
             vec: vector!(),
             start: (0, Ulid::nil()),
             last: (0, Ulid::nil()),
-            status: DisplayStatus::default()
+            status: RefCell::new(DisplayStatus::default()),
         }
     }
 
@@ -62,7 +62,7 @@ impl DisplayChunks {
         // Many case
         self.total_stored += 1;
         self.last = (self.total_stored - 1, new.id.id);
-        self.vec.push_back(new);
+        self.vec.push_back(new)
     }
 
     /// Fetch multiple msgs younger than last-on-display from the [Chunks](super).
@@ -76,12 +76,12 @@ impl DisplayChunks {
             // SAFETY: vec was checked if empty before
             self.start = (0, self.vec.front().unwrap().id.id);
             self.last = (0, self.vec.back().unwrap().id.id);
-            self.total_stored = appended_count;
+            self.total_stored = appended_count
         } else {
             // Many case
             self.vec.append(vector);
             self.last = (self.vec.len() as u16, self.vec.back().unwrap().id.id);
-            self.total_stored += appended_count;
+            self.total_stored += appended_count
         }
     }
 
@@ -127,31 +127,61 @@ impl DisplayChunks {
                     _ => self.vec.remove(idx)
                 };
                 assert!(r.ulid() == del);
-                self.total_stored -= 1;
+                self.total_stored -= 1
             }
         }
     }
 
-    /// Hide msgs older than 20 or do nothing.
-    pub fn check_if_hide_older_msgs(&mut self) {
-        match self.total_stored {
-            0..20 => self.status = DisplayStatus::AllVisible,
+    /// Assess if status changed enough to reload msgs and re-calculate hide index again.
+    pub fn check_need_for_reload(&self) -> bool {
+        let total_stored = self.total_stored;
+        match total_stored {
+            0..20 => {
+                *self.status.borrow_mut() = DisplayStatus::AllVisible;
+                false
+            },
             20.. => {
-                let hide_point = self.vec.get(19).unwrap().ulid();
-                self.status = DisplayStatus::PartiallyHidden(19, hide_point)
+                let mut status = self.status.borrow_mut();
+                match *status {
+                    DisplayStatus::AllVisible => {
+                        if let Some(hide_point) = self.vec.get((total_stored - 20) as usize) {
+                            let t = total_stored - 20;
+                            *status = DisplayStatus::PartiallyHidden(t, hide_point.ulid());
+                            return true
+                        }
+                        false
+                    },
+                    DisplayStatus::PartiallyHidden(idx, ulid) => {
+                        // Calculate the difference
+                        let idx_diff = ((total_stored - 20) - idx) as i16;
+                        match idx_diff {
+                            // Do not reload if less that 5 added/deleted msgs 
+                            -5..5 => false,
+                            // ...otherwise reload
+                            _ => {
+                                if let Some(hide_point) = self.vec.get((total_stored - 20) as usize) {
+                                    let t = total_stored - 20;
+                                    *status = DisplayStatus::PartiallyHidden(t, hide_point.ulid());
+                                    return true
+                                }
+                                false
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    /// Fetch another full [Chunk](super).
+    /// Fetch another full [Chunk](super::MsgChunk).
     pub fn append_older_chunk(&mut self, chunk: &[MsgViewData]) {
         let chunk_len = chunk.len();
         for msg in chunk.iter().rev() {
             self.vec.push_front(msg.clone());
         }
         self.start.1 = self.vec.front().unwrap().ulid();
-        self.total_stored += chunk_len as u16
-        // assert_eq!(self.total_stored, self.vec.len() as u16);
+        self.total_stored += chunk_len as u16;
+        // assert_eq!(self.total_storeds, self.vec.len() as u16);
     }
     
     /// Fetch another full [Chunk](super).
@@ -166,7 +196,8 @@ impl DisplayChunks {
         // Override self with joined collection
         self.vec = new_front;
         self.start.1 = self.vec.front().unwrap().ulid();
-        self.total_stored += chunk_len as u16
+        self.total_stored += chunk_len as u16;
+        // self.status_changed.set(true)
     }
 
     /// Return if last msg is not [Ulid::Nil](ulid::Ulid).
@@ -174,6 +205,24 @@ impl DisplayChunks {
         if self.total_stored == 0 { return None }
         if self.last.1.is_nil() { return None }
         Some(self.last.1)
+    }
+
+    /// Get the index of provided msg or returns 0, when not found.
+    pub fn extract_idx(&self, msg: &MsgViewData) -> usize {
+        self.vec.index_of(msg).unwrap_or_default()
+    }
+
+
+    pub fn get_visible_indicies(&self) -> Vec<usize> {
+        match *self.status.borrow() {
+            DisplayStatus::AllVisible => {
+                (0..self.total_stored as usize).collect()
+            },
+            DisplayStatus::PartiallyHidden(idx, ulid) => {
+                debug!("fn: get_visible_indicies: all: {}..={}", idx, self.total_stored);
+                (idx as usize..self.total_stored as usize).collect()
+            }
+        }
     }
 }
 
@@ -183,13 +232,14 @@ impl IntoIterator for DisplayChunks {
     type IntoIter = im::vector::ConsumingIter<MsgViewData>;
 
     fn into_iter(mut self) -> Self::IntoIter {
-        match self.status {
+        match *self.status.borrow() {
             DisplayStatus::AllVisible => {
                 self.vec.into_iter()
             },
             DisplayStatus::PartiallyHidden(idx, ulid) => {
-                let s = self.vec.slice(idx as usize..);
-                s.into_iter()
+                let l = self.vec.slice(idx as usize..);
+                // trace!("Into Iter slice len: {}", l.len());
+                l.into_iter()
             }
         }
     }
@@ -305,29 +355,29 @@ fn display_hide_older_test() {
     // ------------------
     // Display on 5
     display.append_many(&msg_vec[..5]);
-    display.check_if_hide_older_msgs();
-    assert_eq!(display.status, DisplayStatus::AllVisible);
+    display.check_need_for_reload();
+    assert_eq!(*display.status.borrow(), DisplayStatus::AllVisible);
     // Display on 15
     display.append_many(&msg_vec[5..15]);
-    display.check_if_hide_older_msgs();
-    assert_eq!(display.status, DisplayStatus::AllVisible);
+    display.check_need_for_reload();
+    assert_eq!(*display.status.borrow(), DisplayStatus::AllVisible);
     // Display on 19
     display.append_many(&msg_vec[15..19]);
-    display.check_if_hide_older_msgs();
-    assert_eq!(display.status, DisplayStatus::AllVisible);
+    display.check_need_for_reload();
+    assert_eq!(*display.status.borrow(), DisplayStatus::AllVisible);
     // Display on 20
     display.append_new(msg_vec[19].clone());
     let hidden = msg_vec[19].ulid();
-    display.check_if_hide_older_msgs();
-    assert_eq!(display.status, DisplayStatus::PartiallyHidden(19, hidden));
+    display.check_need_for_reload();
+    assert_eq!(*display.status.borrow(), DisplayStatus::PartiallyHidden(19, hidden));
     // Display on 21
     display.append_many(&msg_vec[20..21]);
-    display.check_if_hide_older_msgs();
-    assert_eq!(display.status, DisplayStatus::PartiallyHidden(19, hidden));
+    display.check_need_for_reload();
+    assert_eq!(*display.status.borrow(), DisplayStatus::PartiallyHidden(19, hidden));
     // Display on 40
     display.append_many(&msg_vec[21..]);
-    display.check_if_hide_older_msgs();
-    assert_eq!(display.status, DisplayStatus::PartiallyHidden(19, hidden));
+    display.check_need_for_reload();
+    assert_eq!(*display.status.borrow(), DisplayStatus::PartiallyHidden(19, hidden));
 }
 
 #[test]

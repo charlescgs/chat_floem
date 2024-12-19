@@ -28,12 +28,7 @@ pub enum RoomMsgUpt {
 }
 
 
-/// This function:
-/// - [x] organize msgs,
-/// - [x] paint msgs,
-/// - [x] update view on changes
-/// - [ ] communicate with rooms
-/// - [ ] communicate with backend
+
 pub fn msgs_view() -> impl View {
     info!("->> msgs_view");
     // -- Needed elements
@@ -116,12 +111,23 @@ pub fn msgs_view() -> impl View {
                 // let msgs_count = this_room.msgs_count;
                 // let display_data = RwSignal::new(Vector::new());
                 let display_chunks = RwSignal::new(DisplayChunks::new());
+                let reload_trigger = Trigger::new();
                 let is_active = this_room.is_active;
                 // let load_more = Trigger::new();
                 let room_idx = this_room.idx();
                 // -- Tracks how many chunks is in this room
                 
-                let room = this_room.clone();
+                // let room = this_room.clone();
+                create_effect(move |_| {
+                    debug!("== effect: msgs tab({idx}) check if need to hide older msgs");
+                    if is_active.get().get() {
+                        if display_chunks.with_untracked(|dc| dc.check_need_for_reload()) {
+                            // Reload msgs again with older one hidden
+                            debug!("..reloading tab{idx}");
+                            reload_trigger.notify()
+                        }
+                    }
+                });
 
                 let room = this_room.clone();
                 create_effect(move |_| {
@@ -172,15 +178,17 @@ pub fn msgs_view() -> impl View {
 // MARK: dyn_stack
                 dyn_stack(
                     move || {
+                        reload_trigger.track();
                         let chunks = display_chunks.get(); // FIXME: called twice during new msg
-                        info!("->> dyn_stack: msg(each_fn) (with {} msg/s)", chunks.total_stored);
-                        chunks.into_iter().enumerate()
+                        let vis_idx = chunks.get_visible_indicies();
+                        info!("->> dyn_stack: msg(each_fn) (with {} msg/s) and {}", chunks.total_stored, vis_idx.len());
+                        vis_idx.into_iter().zip(chunks.into_iter())
                     },
-                    |(idx, msg)| {
-                        info!("dyn_stack: msg(key_fn) for {}", msg.id.id);
+                    move |(idx, msg)| {
+                        info!("dyn_stack: msg(key_fn): {idx} - {}", msg.id.id);
                         *idx
                     },
-                    |(_, msg)| {
+                    |(i, msg)| {
                         trace!("dyn_stack: msg(view_fn): {}", msg.id);
                         let is_owner = msg.room_owner;
                         msg.style(move |s| s.apply_if(is_owner,
