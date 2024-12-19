@@ -11,6 +11,7 @@ use im::Vector;
 use tracing_lite::{debug, info, trace, warn};
 use ulid::Ulid;
 
+use crate::chunks::display::{DisplayChunks, DisplayStatus};
 use crate::view_data::session::APP;
 use crate::view_data::MsgEvent;
 
@@ -108,13 +109,13 @@ pub fn msgs_view() -> impl View {
             move |(idx, room)| {
                 let scroll_to_end = Trigger::new();
                 // -- Tab logic and state
-                // let cx = APP.with(|app| app.provide_scope());
                 let this_room = Rc::new(room);
                 let get_upt = this_room.get_update;
                 // -- Room messages
                 let room_chunks = this_room.msgs;
                 // let msgs_count = this_room.msgs_count;
-                let msgs_vec = RwSignal::new(Vector::new());
+                // let display_data = RwSignal::new(Vector::new());
+                let display_chunks = RwSignal::new(DisplayChunks::new());
                 let is_active = this_room.is_active;
                 // let load_more = Trigger::new();
                 let room_idx = this_room.idx();
@@ -129,34 +130,28 @@ pub fn msgs_view() -> impl View {
                         RoomMsgUpt::NoUpdate => {},
                         RoomMsgUpt::LoadMore => {
                             debug!("RoomMsgUpt::LoadMore");
-                            if room.msgs_count.get_untracked() > msgs_vec.with_untracked(|mv| mv.len() as u16) {
-                                msgs_vec.update(|mv| {
+                            if room.msgs_count.get_untracked() > display_chunks.with_untracked(|mv| mv.total_stored) {
+                                display_chunks.update(|dc| {
                                     room_chunks.with_untracked(|chunks| {
-                                        for each in chunks.load_older_chunk() {
-                                            mv.push_back(each.clone());
-                                        }
+                                        dc.append_older_chunk(chunks.load_older_chunk())
                                     })
                                 });
                             }
                         },
                         RoomMsgUpt::NewMany => {
-                            msgs_vec.update(|mv| {
+                            display_chunks.update(|dc| {
                                 room_chunks.with_untracked(|chunks| {
-                                    debug!("RoomMsgUpt::NewMany: {idx} with new msgs, loading new content");
-                                    let current_youngest_msg = mv.last().map(|m| m.id.id); // FIXME!
-                                    mv.extend(
-                                        chunks
-                                            .load_new_content(current_youngest_msg, true)
-                                            .into_iter()
-                                    );
+                                    debug!("RoomMsgUpt::NewMany: tab{idx} with new msgs, loading new content");
+                                    let current_last_msg = dc.get_last_msg(); // FIXME!
+                                    dc.append_many(&chunks.load_new_content(current_last_msg, true));
                                 })
                             });
                         },
                         RoomMsgUpt::New => {
                             if let Some(new_msg) = room.msgs.with_untracked(|chunks| chunks.last_msg().cloned()) {
-                                debug!("RoomMsgUpt::New: {idx} with new msg: {}", new_msg.id.id);
-                                msgs_vec.update(|v| v.push_back(new_msg));
-                                println!("msgs vector len: {}", msgs_vec.with_untracked(|mv| mv.len()));
+                                debug!("RoomMsgUpt::New: tab{idx} with new msg: {}", new_msg.id.id);
+                                display_chunks.update(|v| v.append_new(new_msg));
+                                println!("msgs vector len: {}", display_chunks.with_untracked(|mv| mv.total_stored));
                                 scroll_to_end.notify();
                             } else {
                                 warn!("RoomMsgUpt: {idx} last msg fn returned None")
@@ -164,39 +159,21 @@ pub fn msgs_view() -> impl View {
                         },
                         RoomMsgUpt::Changed(msg_id) => {
                             if let Some(changed_msg) = room_chunks.with_untracked(|rc| rc.find_msg(msg_id).cloned()) {
-                                debug!("RoomMsgUpt::Changed: {idx} with upt msg: {}", changed_msg.id.id);
-                                let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&changed_msg)) else { return };
-                                msgs_vec.update(|mv|
-                                    if let Some(msg) = mv.get_mut(idx) {
-                                        *msg = changed_msg;
-                                    }
-                                );
+                                debug!("RoomMsgUpt::Changed: tab{idx} with upt msg: {}", changed_msg.id.id);
+                                display_chunks.update(|dc| dc.msg_edited(changed_msg));
                             }
                         },
-                        RoomMsgUpt::Deleted(ref msg_id) => {
-                            debug!("RoomMsgUpt::Deleted: {idx} with {msg_id}");
-                            let mut del_idx = 0;
-                            if let Some(del_msg) = msgs_vec.with_untracked(|v| v.iter().find(|m| &m.id.id == msg_id).cloned()) {
-                                let del_idx_found =
-                                    if let Some(idx) = msgs_vec.with_untracked(|v| v.index_of(&del_msg)) {
-                                        del_idx = idx;
-                                        debug!("RoomMsgUpt: {idx} with {}", del_msg.id.id);
-                                        true
-                                    } else {
-                                        false
-                                    };
-                                if del_idx_found {
-                                    msgs_vec.update(|v| { v.remove(del_idx); });
-                                }
-                            }
+                        RoomMsgUpt::Deleted(msg_id) => {
+                            debug!("RoomMsgUpt::Deleted: tab{idx} with {msg_id}");
+                            display_chunks.update(|dc| dc.msg_removed(msg_id));
                         }
                     }
                 });
-// MARK: dyn_stack                
+// MARK: dyn_stack
                 dyn_stack(
                     move || {
-                        let chunks = msgs_vec.get(); // FIXME: called twice during new msg
-                        info!("->> dyn_stack: msg(each_fn) (with {} msg/s)", chunks.len());
+                        let chunks = display_chunks.get(); // FIXME: called twice during new msg
+                        info!("->> dyn_stack: msg(each_fn) (with {} msg/s)", chunks.total_stored);
                         chunks.into_iter().enumerate()
                     },
                     |(idx, msg)| {

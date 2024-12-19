@@ -13,7 +13,7 @@ use super::RoomMsgChunks;
 
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub enum DisStatus {
+pub enum DisplayStatus {
     #[default]
     AllVisible,
     PartiallyHidden(u16, Ulid)
@@ -33,7 +33,7 @@ pub struct DisplayChunks {
     pub last: (u16, Ulid),
     /// If any msgs are hidden.
     /// Anything before that index/msg will not be loaded.
-    pub status: DisStatus
+    pub status: DisplayStatus
 }
 
 impl DisplayChunks {
@@ -44,7 +44,7 @@ impl DisplayChunks {
             vec: vector!(),
             start: (0, Ulid::nil()),
             last: (0, Ulid::nil()),
-            status: DisStatus::default()
+            status: DisplayStatus::default()
         }
     }
 
@@ -133,12 +133,12 @@ impl DisplayChunks {
     }
 
     /// Hide msgs older than 20 or do nothing.
-    pub fn hide_older(&mut self) {
+    pub fn check_if_hide_older_msgs(&mut self) {
         match self.total_stored {
-            0..20 => self.status = DisStatus::AllVisible,
+            0..20 => self.status = DisplayStatus::AllVisible,
             20.. => {
                 let hide_point = self.vec.get(19).unwrap().ulid();
-                self.status = DisStatus::PartiallyHidden(19, hide_point)
+                self.status = DisplayStatus::PartiallyHidden(19, hide_point)
             }
         }
     }
@@ -168,6 +168,13 @@ impl DisplayChunks {
         self.start.1 = self.vec.front().unwrap().ulid();
         self.total_stored += chunk_len as u16
     }
+
+    /// Return if last msg is not [Ulid::Nil](ulid::Ulid).
+    pub fn get_last_msg(&self) -> Option<Ulid> {
+        if self.total_stored == 0 { return None }
+        if self.last.1.is_nil() { return None }
+        Some(self.last.1)
+    }
 }
 
 impl IntoIterator for DisplayChunks {
@@ -175,8 +182,16 @@ impl IntoIterator for DisplayChunks {
 
     type IntoIter = im::vector::ConsumingIter<MsgViewData>;
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.vec.into_iter()
+    fn into_iter(mut self) -> Self::IntoIter {
+        match self.status {
+            DisplayStatus::AllVisible => {
+                self.vec.into_iter()
+            },
+            DisplayStatus::PartiallyHidden(idx, ulid) => {
+                let s = self.vec.slice(idx as usize..);
+                s.into_iter()
+            }
+        }
     }
 }
 
@@ -290,29 +305,29 @@ fn display_hide_older_test() {
     // ------------------
     // Display on 5
     display.append_many(&msg_vec[..5]);
-    display.hide_older();
-    assert_eq!(display.status, DisStatus::AllVisible);
+    display.check_if_hide_older_msgs();
+    assert_eq!(display.status, DisplayStatus::AllVisible);
     // Display on 15
     display.append_many(&msg_vec[5..15]);
-    display.hide_older();
-    assert_eq!(display.status, DisStatus::AllVisible);
+    display.check_if_hide_older_msgs();
+    assert_eq!(display.status, DisplayStatus::AllVisible);
     // Display on 19
     display.append_many(&msg_vec[15..19]);
-    display.hide_older();
-    assert_eq!(display.status, DisStatus::AllVisible);
+    display.check_if_hide_older_msgs();
+    assert_eq!(display.status, DisplayStatus::AllVisible);
     // Display on 20
     display.append_new(msg_vec[19].clone());
     let hidden = msg_vec[19].ulid();
-    display.hide_older();
-    assert_eq!(display.status, DisStatus::PartiallyHidden(19, hidden));
+    display.check_if_hide_older_msgs();
+    assert_eq!(display.status, DisplayStatus::PartiallyHidden(19, hidden));
     // Display on 21
     display.append_many(&msg_vec[20..21]);
-    display.hide_older();
-    assert_eq!(display.status, DisStatus::PartiallyHidden(19, hidden));
+    display.check_if_hide_older_msgs();
+    assert_eq!(display.status, DisplayStatus::PartiallyHidden(19, hidden));
     // Display on 40
     display.append_many(&msg_vec[21..]);
-    display.hide_older();
-    assert_eq!(display.status, DisStatus::PartiallyHidden(19, hidden));
+    display.check_if_hide_older_msgs();
+    assert_eq!(display.status, DisplayStatus::PartiallyHidden(19, hidden));
 }
 
 #[test]

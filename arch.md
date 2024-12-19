@@ -20,7 +20,8 @@ Update comes from the server to backend -> to frontend([UISession]) -> notif -> 
 
 ------------------------------------------
 
-## Chunks system example
+## Chunks system
+#### Example 1:
 | Chunks msgs | Operation | Display msgs |
 1. New Msgs:
 # # # # # #
@@ -34,7 +35,6 @@ Update comes from the server to backend -> to frontend([UISession]) -> notif -> 
 # # # # # #   calc_shown->    - - # # #
 6. Load more:
 # # # # # #    unhide->       # # # # #
-
 
 ## Chunks cases:
 1. Add msg:
@@ -65,7 +65,8 @@ Update comes from the server to backend -> to frontend([UISession]) -> notif -> 
 ### Chunks & Display implementation concepts:
 - [Chunks] is a struct holding vec of [Chunk] with metadata
 - [Chunk] is struct holding up to 20 msgs in vec with metadata
-- [Display] is:
-    Option 1: [Vector] holding msgs
-    *Option 2*: Struct with focus-like capabilites holding msgs  and implementing `IntoIterator` trait
-    Option 3: [BTreeMap] with msg_id as keys
+- [Display] Struct with focus-like capabilites holding msgs  and implementing `IntoIterator` trait
+- Rules:
+    - [Chunks] is source of truth regarding msgs and their state:
+        - gets updated from Backend and then notify [Display]
+    - [Display] receive updates regarding msgs, but can manipulate displayed msgs

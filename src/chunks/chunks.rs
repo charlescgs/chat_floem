@@ -192,6 +192,7 @@ impl RoomMsgChunks {
     /// Load everything from particular point onwards (without the `earliest`).
     /// When `with_limit` is `yes`, only youngest chunk or 20 msgs with be fetched.
     pub fn load_new_content(&self, earliest: Option<Ulid>, with_limit: bool) -> Vec<MsgViewData> {
+        // trace!("fn: load_new_content: earliest is: {earliest:?}");
         match earliest {
             Some(last_loaded_msg) => {
                 let mut msg_idx = None;
